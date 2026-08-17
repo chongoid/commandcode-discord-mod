@@ -15,7 +15,7 @@ import {
 } from 'discord.js';
 import type {DiscordModConfig, NdjsonEvent, NdjsonResult, UsageStats} from './types';
 import {SessionBridge, type SessionCallbacks} from './session-bridge';
-import {formatEvent, formatResult, formatTextDelta, splitMessage} from './formatter';
+import {formatEvent, formatResult, splitMessage} from './formatter';
 import {isUserAllowed} from './config';
 
 const REQUIRED_PERMISSIONS = [
@@ -35,7 +35,7 @@ export class DiscordBot {
   private trackedThreads = new Set<string>();
   private messageBuffers = new Map<string, {messages: string[]; timer?: ReturnType<typeof setTimeout>; lastMessage?: Message}>();
   private statusCallbacks: Array<(status: string) => void> = [];
-  private messageQueue: Array<() => Promise<void>> = [];
+  private messageQueue: Array<() => Promise<unknown>> = [];
   private queueProcessing = false;
   private maxRetries = 3;
   private stats: UsageStats;
@@ -102,7 +102,7 @@ export class DiscordBot {
   }
 
   // ── Rate Limit Handling ──────────────────────────────────────────────
-  private async enqueueMessage(fn: () => Promise<void>): Promise<void> {
+  private async enqueueMessage(fn: () => Promise<unknown>): Promise<void> {
     this.messageQueue.push(fn);
     if (!this.queueProcessing) {
       this.processQueue();
@@ -136,7 +136,7 @@ export class DiscordBot {
   }
 
   private async sendQueued(channel: {send: Function}, content: any): Promise<void> {
-    await this.enqueueMessage(() => channel.send(content));
+    await this.enqueueMessage(() => channel.send(content) as Promise<unknown>);
   }
 
   // ── Event Handlers ──────────────────────────────────────────────────
@@ -466,7 +466,7 @@ export class DiscordBot {
 
     buffer.timer = setTimeout(async () => {
       const merged = buffer!.messages.join('\n');
-      const lastMsg = buffer!.lastMessage;
+      const lastMsg = buffer!.lastMessage || message;
       buffer!.messages = [];
       this.messageBuffers.delete(threadId);
       await this.processInThread(thread, lastMsg, merged);
@@ -488,7 +488,7 @@ export class DiscordBot {
     prompt: string,
     sessionId: string,
   ): Promise<void> {
-    const channelName = 'name' in channel ? channel.name : 'DM';
+    const channelName = 'isThread' in channel && channel.isThread() ? (channel as ThreadChannel).name : 'DM';
     console.log(`[Process] Starting session in ${channelName}`);
 
     // Typing indicator

@@ -199,8 +199,3 @@ function formatTokens(usage: Record<string, unknown>): string {
   if (cacheRead) parts.push(`${Number(cacheRead).toLocaleString()} cached`);
   return parts.join(' / ');
 }
-
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength - 3) + '...';
-}

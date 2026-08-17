@@ -53,7 +53,7 @@ export default function(cmd: ModApi): void {
 
   // Register lifecycle hooks
   cmd.hooks({
-    onSessionStart: ({source}) => {
+    onSessionStart: ({source}: {source: string}) => {
       if (botStarted) return;
 
       try {
@@ -61,12 +61,12 @@ export default function(cmd: ModApi): void {
         bot = new DiscordBot(config);
 
         // Update status in TUI
-        bot.onStatusChange((status) => {
+        bot.onStatusChange((status: string) => {
           cmd.ui.setStatus(`Discord: ${status}`);
         });
 
         // Start bot (fire-and-forget)
-        bot.start().catch((err) => {
+        bot.start().catch((err: Error) => {
           cmd.ui.notify(`Discord bot failed to start: ${err.message}`, 'warning');
           bot = null;
           botStarted = false;
@@ -80,7 +80,7 @@ export default function(cmd: ModApi): void {
       }
     },
 
-    onSessionEnd: ({reason}) => {
+    onSessionEnd: ({reason}: {reason: string}) => {
       if (reason === 'shutdown' && bot) {
         bot.stop().catch(() => {});
         bot = null;

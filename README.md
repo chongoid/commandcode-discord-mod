@@ -65,6 +65,8 @@ cmd --resume <session-id>      # Resume one in your terminal
 | `DISCORD_BOT_TOKEN` | — | **(Required)** Bot token |
 | `DISCORD_ALLOWED_USERS` | `*` | Comma-separated user IDs or `*` for all |
 | `DISCORD_GUILD_ID` | all | Restrict to a specific guild |
+| `DISCORD_CHANNEL_NAME` | `command-code` | Name of the channel to create |
+| `DISCORD_BATCH_DELAY_MS` | `600` | Delay (ms) before processing batched messages |
 | `CMD_WORKING_DIR` | cwd | Working directory for sessions |
 | `CMD_YOLO` | `true` | Enable file writes + shell |
 | `CMD_MAX_TURNS` | `100` | Max turns per session |

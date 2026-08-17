@@ -1,5 +1,3 @@
-import type {ChildProcess} from 'child_process';
-
 export interface DiscordModConfig {
   botToken: string;
   allowedUsers: string[];
@@ -32,15 +30,6 @@ export interface UsageStats {
   totalTokensInput: number;
   totalTokensOutput: number;
   totalDurationMs: number;
-}
-
-export interface ThreadState {
-  session: ThreadSession;
-  process?: ChildProcess;
-  pendingMessages: string[];
-  batchTimer?: ReturnType<typeof setTimeout>;
-  statusMessage?: string;
-  isProcessing: boolean;
 }
 
 export interface NdjsonEvent {
