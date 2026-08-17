@@ -1,0 +1,18 @@
+[Unit]
+Description=Command Code Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h
+ExecStart=/usr/bin/env npx tsx %h/.commandcode/mods/discord/standalone.ts
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+# Set your bot token here or in ~/.commandcode/mods/discord/.env
+# Environment=DISCORD_BOT_TOKEN=your-token-here
+EnvironmentFile=-%h/.commandcode/mods/discord/.env
+
+[Install]
+WantedBy=default.target
