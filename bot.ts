@@ -415,19 +415,32 @@ export class DiscordBot {
     const threadName = this.deriveThreadName(content);
     let thread: ThreadChannel;
 
-    try {
-      thread = await message.startThread({
-        name: threadName,
-        autoArchiveDuration: 1440,
-      });
-    } catch (error: any) {
-      // Message already has a thread — use it
-      if (error?.code === 'MessageExistingThread' && message.thread) {
-        thread = message.thread;
-      } else {
-        console.error('[ChannelMention] Failed to create thread:', error);
-        await message.reply('Failed to create thread. Please try again.');
-        return;
+    // Check if message already has a thread
+    if (message.hasThread) {
+      thread = message.thread!;
+    } else {
+      try {
+        thread = await message.startThread({
+          name: threadName,
+          autoArchiveDuration: 1440,
+        });
+      } catch (error: any) {
+        if (error?.code === 'MessageExistingThread') {
+          // Thread exists but wasn't cached — fetch it
+          const active = await message.channel.threads.fetchActive();
+          const found = active.threads.find((t: ThreadChannel) => t.parentId === message.channel.id);
+          if (found) {
+            thread = found;
+          } else {
+            console.error('[ChannelMention] Thread exists but could not be fetched');
+            await message.reply('Thread already exists. Check the thread list.');
+            return;
+          }
+        } else {
+          console.error('[ChannelMention] Failed to create thread:', error);
+          await message.reply('Failed to create thread. Please try again.');
+          return;
+        }
       }
     }
 
