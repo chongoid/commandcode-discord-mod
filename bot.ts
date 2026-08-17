@@ -149,6 +149,7 @@ export class DiscordBot {
       await this.ensureCommandCodeChannels();
       this.checkBotPermissions();
       this.startThreadArchival();
+      await this.resumeInterruptedSessions();
     });
 
     this.client.on('guildCreate', async (guild) => {
@@ -484,7 +485,7 @@ export class DiscordBot {
 
   private async processInChannel(
     channel: ThreadChannel | DMChannel,
-    userMessage: Message,
+    userMessage: Message | null,
     prompt: string,
     sessionId: string,
   ): Promise<void> {
@@ -625,6 +626,39 @@ export class DiscordBot {
       console.error('[Process] Fatal error:', err);
       const msg = err instanceof Error ? err.message : String(err);
       await channel.send(`❌ Something went wrong: ${msg}`).catch(() => {});
+    }
+  }
+
+  // ── Resume Interrupted Sessions ────────────────────────────────────
+  private async resumeInterruptedSessions(): Promise<void> {
+    const interrupted = this.bridge.getInterruptedSessions();
+    if (interrupted.length === 0) return;
+
+    console.log(`[Resume] Found ${interrupted.length} interrupted session(s)`);
+
+    for (const session of interrupted) {
+      try {
+        const channel = await this.client.channels.fetch(session.channelId);
+        if (!channel || !('send' in channel)) {
+          console.warn(`[Resume] Channel ${session.channelId} not found, clearing stale session ${session.threadId}`);
+          this.bridge.markSessionNotProcessing(session.threadId);
+          continue;
+        }
+
+        const resumeChannel = channel as ThreadChannel | DMChannel;
+
+        // Unarchive thread if needed
+        if (resumeChannel.isThread() && (resumeChannel as ThreadChannel).archived) {
+          try { await (resumeChannel as ThreadChannel).setArchived(false); } catch {}
+        }
+
+        this.trackedThreads.add(session.threadId);
+        await resumeChannel.send('_🔄 Resuming interrupted session..._');
+        await this.processInChannel(resumeChannel, null, session.lastPrompt || '', session.threadId);
+      } catch (err) {
+        console.error(`[Resume] Failed to resume session ${session.threadId}:`, err);
+        this.bridge.markSessionNotProcessing(session.threadId);
+      }
     }
   }
 

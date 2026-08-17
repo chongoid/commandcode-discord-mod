@@ -113,6 +113,9 @@ export class SessionBridge {
 
     session.lastActiveAt = Date.now();
     session.requestCount = (session.requestCount || 0) + 1;
+    session.isProcessing = true;
+    session.lastPrompt = prompt;
+    this.saveState();
 
     const args = this.buildArgs(prompt, session.sessionId, session.model);
     const cmdPath = this.findCmd();
@@ -161,12 +164,23 @@ export class SessionBridge {
     proc.on('error', (err) => {
       log(`Process error: ${err.message}`);
       this.activeProcesses.delete(threadId);
+      if (session) {
+        session.isProcessing = false;
+        delete session.lastPrompt;
+        this.saveState();
+      }
       callbacks.onError(`Process error: ${err.message}`);
     });
 
     proc.on('close', (code, signal) => {
       log(`Process closed: code=${code}, signal=${signal}`);
       this.activeProcesses.delete(threadId);
+
+      if (session) {
+        session.isProcessing = false;
+        delete session.lastPrompt;
+        this.saveState();
+      }
 
       if (stdoutBuffer.trim()) {
         this.processLine(stdoutBuffer.trim(), session!, callbacks);
@@ -190,6 +204,21 @@ export class SessionBridge {
       title: s.title,
       lastActive: s.lastActiveAt,
     }));
+  }
+
+  getInterruptedSessions(): ThreadSession[] {
+    return Array.from(this.sessions.values()).filter(
+      s => s.isProcessing && s.sessionId
+    );
+  }
+
+  markSessionNotProcessing(threadId: string): void {
+    const session = this.sessions.get(threadId);
+    if (session) {
+      session.isProcessing = false;
+      delete session.lastPrompt;
+      this.saveState();
+    }
   }
 
   private findCmd(): string {

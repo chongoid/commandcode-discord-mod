@@ -18,6 +18,8 @@ export interface ThreadSession {
   title?: string;
   requestCount: number;
   model?: string;
+  isProcessing?: boolean;
+  lastPrompt?: string;
 }
 
 export interface UsageStats {
