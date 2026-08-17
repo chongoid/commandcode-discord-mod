@@ -18,39 +18,22 @@
 
 ---
 
-## 📋 Prerequisites
+## 🚀 Install
 
-1. **[Command Code](https://commandcode.ai)** installed
-2. **A Discord bot** — create one at the [Developer Portal](https://discord.com/developers/applications)
-3. **Privileged Intents enabled** — in your app → **Bot** → enable **Message Content** and **Server Members** intents → Save
-4. **Bot invited** with correct permissions:
-   ```
-   https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_ID&permissions=2147880016&scope=bot%20applications.commands
-   ```
+Paste this into a Command Code session — it does everything:
 
----
-
-## 🚀 Quick Install
-
-```bash
-git clone https://github.com/chongoid/commandcode-discord.git ~/.commandcode/mods/discord \
-  && cd ~/.commandcode/mods/discord \
-  && npm install \
-  && echo "DISCORD_BOT_TOKEN=your-token-here" > .env
+```
+Install the commandcode-discord mod from https://github.com/chongoid/commandcode-discord — clone it to ~/.commandcode/mods/discord, run npm install, create a systemd service with install-service.sh, and prompt me for my Discord bot token.
 ```
 
-Then run as a 24/7 service (recommended):
-
-```bash
-./install-service.sh
-```
+For manual setup or prerequisites, see [INSTALL.md](./INSTALL.md).
 
 ---
 
 ## 🎮 Usage
 
 **In Discord:**
-1. Mention `@YourBot` in any channel to start a session
+1. Mention `@YourBot` in `#command-code` to start a session
 2. Reply in the thread — no mention needed
 3. Or DM the bot directly for private sessions
 
@@ -77,31 +60,6 @@ cmd --resume <session-id>      # Resume one in your terminal
 
 ---
 
-## 🏃 Running Modes
-
-**Service (recommended)** — managed by systemd, auto-starts on boot, auto-restarts on crash:
-
-```bash
-./install-service.sh                              # Install
-systemctl --user status commandcode-discord       # Status
-journalctl --user -f -u commandcode-discord       # Logs
-systemctl --user restart commandcode-discord       # Restart
-```
-
-**Manual:**
-
-```bash
-cd ~/.commandcode/mods/discord && source .env && npx tsx standalone.ts
-```
-
-**As a mod (TUI integration):**
-
-```bash
-cmd --mod ~/.commandcode/mods/discord
-```
-
----
-
 ## ⚙️ Configuration
 
 | Variable | Default | Description |
@@ -112,6 +70,8 @@ cmd --mod ~/.commandcode/mods/discord
 | `CMD_WORKING_DIR` | cwd | Working directory for sessions |
 | `CMD_YOLO` | `true` | Enable file writes + shell |
 | `CMD_MAX_TURNS` | `100` | Max turns per session |
+
+Set these in `~/.commandcode/mods/discord/.env`.
 
 ---
 
