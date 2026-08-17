@@ -9,16 +9,19 @@ export function formatToolRunning(event: NdjsonEvent['event'], input?: unknown):
   const description = event.description ? String(event.description) : '';
   const inputPreview = formatInputCompact(toolName, input);
 
-  let text: string;
-  if (description && inputPreview) {
-    text = `_⏳ ${description} · ${inputPreview}_`;
-  } else if (description) {
-    text = `_⏳ ${description}_`;
-  } else if (inputPreview) {
-    text = `_⏳ ${toolName} · ${inputPreview}_`;
-  } else {
-    text = `_⏳ ${toolName}_`;
+  // Prefer toolName for display; use description only if it adds context beyond the tool name itself
+  let context = inputPreview;
+  if (!context && description) {
+    const normalizedDesc = description.toLowerCase().replace(/[_\s-]/g, '');
+    const normalizedTool = toolName.toLowerCase().replace(/[_\s-]/g, '');
+    if (normalizedDesc !== normalizedTool) {
+      context = description;
+    }
   }
+
+  const text = context
+    ? `_⏳ ${toolName} · ${context}_`
+    : `_⏳ ${toolName}_`;
 
   return {toolName, content: text};
 }

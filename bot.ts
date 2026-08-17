@@ -499,14 +499,16 @@ export class DiscordBot {
 
     let errorCount = 0;
     const queuedInputs = new Map<string, unknown>();
-    const toolMessages = new Map<string, Message>();
+    const toolMessageQueues = new Map<string, Message[]>();
 
     const callbacks: SessionCallbacks = {
       onEvent: (event: NdjsonEvent['event']) => {
         const toolCallId = String(event.toolCallId || '');
+        const toolName = String(event.toolName || 'unknown');
 
         switch (event.type) {
           case 'tool_queued': {
+            // Cache input by toolCallId for later matching with tool_running
             if (toolCallId && event.input) {
               queuedInputs.set(toolCallId, event.input);
             }
@@ -523,7 +525,9 @@ export class DiscordBot {
             this.enqueueMessage(async () => {
               try {
                 const msg = await channel.send(formatted.content!) as Message;
-                if (toolCallId) toolMessages.set(toolCallId, msg);
+                const queue = toolMessageQueues.get(toolName) || [];
+                queue.push(msg);
+                toolMessageQueues.set(toolName, queue);
               } catch {}
             });
             break;
@@ -536,9 +540,9 @@ export class DiscordBot {
               : formatToolErrored(event);
             if (!formatted.content) return;
 
-            if (toolCallId && toolMessages.has(toolCallId)) {
-              const existing = toolMessages.get(toolCallId)!;
-              toolMessages.delete(toolCallId);
+            const queue = toolMessageQueues.get(toolName);
+            if (queue && queue.length > 0) {
+              const existing = queue.shift()!;
               this.enqueueMessage(async () => {
                 try { await existing.edit(formatted.content!); } catch {}
               });
