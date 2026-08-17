@@ -4,12 +4,22 @@ const MAX_MESSAGE_LENGTH = 2000;
 const MAX_EMBED_FIELD_LENGTH = 1024;
 const MAX_CODE_BLOCK_LENGTH = 1900;
 
-export function formatToolRunning(event: NdjsonEvent['event']): FormattedOutput {
+export function formatToolRunning(event: NdjsonEvent['event'], input?: unknown): FormattedOutput {
   const toolName = String(event.toolName || 'unknown');
-  const input = event.input ? formatInputCompact(event.input) : '';
-  const text = input
-    ? `_⏳ Running ${toolName} · ${input}_`
-    : `_⏳ Running ${toolName}_`;
+  const description = event.description ? String(event.description) : '';
+  const inputPreview = formatInputCompact(toolName, input);
+
+  let text: string;
+  if (description && inputPreview) {
+    text = `_⏳ ${description} · ${inputPreview}_`;
+  } else if (description) {
+    text = `_⏳ ${description}_`;
+  } else if (inputPreview) {
+    text = `_⏳ ${toolName} · ${inputPreview}_`;
+  } else {
+    text = `_⏳ ${toolName}_`;
+  }
+
   return {toolName, content: text};
 }
 
@@ -120,16 +130,51 @@ export function splitMessage(text: string): string[] {
   return chunks;
 }
 
-function formatInputCompact(input: unknown): string {
+function formatInputCompact(toolName: string, input: unknown): string {
+  if (!input) return '';
   if (typeof input === 'string') return truncate(input, 80);
   try {
     const obj = input as Record<string, unknown>;
-    for (const key of ['pattern', 'command', 'file_path', 'question', 'content']) {
-      if (obj[key] != null) {
-        const str = typeof obj[key] === 'string' ? obj[key] as string : JSON.stringify(obj[key]);
-        return truncate(str, 80);
+
+    // Agent tool — show description (the sub-agent label)
+    if (toolName === 'agent' || toolName === 'explore' || toolName === 'plan') {
+      if (obj.description) return truncate(String(obj.description), 80);
+      if (obj.prompt) return truncate(String(obj.prompt).split('\n')[0], 80);
+    }
+
+    // File tools — show path(s)
+    if (toolName === 'read_file' || toolName === 'edit_file' || toolName === 'write_file') {
+      if (obj.file_path) return String(obj.file_path);
+      if (obj.paths && Array.isArray(obj.paths)) {
+        const paths = obj.paths as string[];
+        if (paths.length === 1) return paths[0];
+        return `${paths[0]} +${paths.length - 1} more`;
       }
     }
+
+    // Shell — show command
+    if (toolName === 'shell_command' || toolName === 'monitor_command') {
+      if (obj.command) return truncate(String(obj.command), 80);
+    }
+
+    // Search tools — show pattern
+    if (toolName === 'grep' || toolName === 'glob') {
+      if (obj.pattern) return truncate(String(obj.pattern), 80);
+    }
+
+    // Web tools
+    if (toolName === 'web_search') {
+      if (obj.query) return truncate(String(obj.query), 80);
+    }
+    if (toolName === 'web_fetch') {
+      if (obj.url) return truncate(String(obj.url), 80);
+    }
+
+    // Generic fallbacks — first meaningful field
+    for (const key of ['description', 'command', 'file_path', 'pattern', 'query', 'question', 'content']) {
+      if (obj[key] != null && typeof obj[key] === 'string') return truncate(obj[key] as string, 80);
+    }
+
     return '';
   } catch {
     return '';

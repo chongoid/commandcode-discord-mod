@@ -15,7 +15,7 @@ import {
 } from 'discord.js';
 import type {DiscordModConfig, NdjsonEvent, NdjsonResult, UsageStats} from './types';
 import {SessionBridge, type SessionCallbacks} from './session-bridge';
-import {formatEvent, formatResult, splitMessage} from './formatter';
+import {formatToolRunning, formatToolCompleted, formatToolErrored, formatResult, splitMessage} from './formatter';
 import {isUserAllowed} from './config';
 
 const REQUIRED_PERMISSIONS = [
@@ -498,31 +498,55 @@ export class DiscordBot {
     await channel.sendTyping();
 
     let errorCount = 0;
+    const queuedInputs = new Map<string, unknown>();
     const toolMessages = new Map<string, Message>();
 
     const callbacks: SessionCallbacks = {
       onEvent: (event: NdjsonEvent['event']) => {
-        const formatted = formatEvent(event);
-        if (!formatted?.content) return;
+        const toolCallId = String(event.toolCallId || '');
 
-        const toolName = formatted.toolName;
-        const content = formatted.content;
+        switch (event.type) {
+          case 'tool_queued': {
+            if (toolCallId && event.input) {
+              queuedInputs.set(toolCallId, event.input);
+            }
+            break;
+          }
 
-        if (event.type === 'tool_running') {
-          this.enqueueMessage(async () => {
-            try {
-              const msg = await channel.send(content) as Message;
-              if (toolName) toolMessages.set(toolName, msg);
-            } catch {}
-          });
-        } else if (toolName && toolMessages.has(toolName)) {
-          const existing = toolMessages.get(toolName)!;
-          toolMessages.delete(toolName);
-          this.enqueueMessage(async () => {
-            try { await existing.edit(content); } catch {}
-          });
-        } else {
-          this.enqueueMessage(() => channel.send(content));
+          case 'tool_running': {
+            const cachedInput = toolCallId ? queuedInputs.get(toolCallId) : undefined;
+            if (toolCallId) queuedInputs.delete(toolCallId);
+
+            const formatted = formatToolRunning(event, cachedInput);
+            if (!formatted.content) return;
+
+            this.enqueueMessage(async () => {
+              try {
+                const msg = await channel.send(formatted.content!) as Message;
+                if (toolCallId) toolMessages.set(toolCallId, msg);
+              } catch {}
+            });
+            break;
+          }
+
+          case 'tool_completed':
+          case 'tool_errored': {
+            const formatted = event.type === 'tool_completed'
+              ? formatToolCompleted(event)
+              : formatToolErrored(event);
+            if (!formatted.content) return;
+
+            if (toolCallId && toolMessages.has(toolCallId)) {
+              const existing = toolMessages.get(toolCallId)!;
+              toolMessages.delete(toolCallId);
+              this.enqueueMessage(async () => {
+                try { await existing.edit(formatted.content!); } catch {}
+              });
+            } else {
+              this.enqueueMessage(() => channel.send(formatted.content!));
+            }
+            break;
+          }
         }
       },
       onResult: (result: NdjsonResult) => {
