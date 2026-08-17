@@ -187,6 +187,15 @@ export class SessionBridge {
       }
 
       if (code !== 0 && code !== null) {
+        // Stale session — retry as a fresh session
+        if (session?.sessionId && stderrBuffer.includes('No session')) {
+          log(`Stale session ${session.sessionId}, retrying fresh`);
+          delete session.sessionId;
+          this.saveState();
+          this.runSession(threadId, channelId, prompt, callbacks);
+          return;
+        }
+
         const errorMatch = stderrBuffer.match(/Error:?\s*(.*)/i);
         if (errorMatch) {
           callbacks.onError(errorMatch[1]);

@@ -420,10 +420,15 @@ export class DiscordBot {
         name: threadName,
         autoArchiveDuration: 1440,
       });
-    } catch (error) {
-      console.error('[ChannelMention] Failed to create thread:', error);
-      await message.reply('Failed to create thread. Please try again.');
-      return;
+    } catch (error: any) {
+      // Message already has a thread — use it
+      if (error?.code === 'MessageExistingThread' && message.thread) {
+        thread = message.thread;
+      } else {
+        console.error('[ChannelMention] Failed to create thread:', error);
+        await message.reply('Failed to create thread. Please try again.');
+        return;
+      }
     }
 
     this.trackedThreads.add(thread.id);
