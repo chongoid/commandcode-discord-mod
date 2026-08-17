@@ -13,8 +13,6 @@
 - **⚡ Full Agent** — Read/write files, run commands, search code — everything Command Code can do
 - **🔄 Session Parity** — Every Discord session is resumable in your terminal via `cmd --resume`
 - **💬 DM Support** — DM the bot for private sessions
-- **📊 `/stats`** — Track requests, sessions, and errors
-- **🎯 Zero Token Waste** — Thread titles from your message text, no LLM calls
 
 ---
 
