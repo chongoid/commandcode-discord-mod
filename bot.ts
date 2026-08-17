@@ -498,12 +498,31 @@ export class DiscordBot {
     await channel.sendTyping();
 
     let errorCount = 0;
+    const toolMessages = new Map<string, Message>();
 
     const callbacks: SessionCallbacks = {
       onEvent: (event: NdjsonEvent['event']) => {
         const formatted = formatEvent(event);
-        if (formatted?.embed) {
-          this.enqueueMessage(() => channel.send({embeds: [formatted.embed!]}));
+        if (!formatted?.content) return;
+
+        const toolName = formatted.toolName;
+        const content = formatted.content;
+
+        if (event.type === 'tool_running') {
+          this.enqueueMessage(async () => {
+            try {
+              const msg = await channel.send(content) as Message;
+              if (toolName) toolMessages.set(toolName, msg);
+            } catch {}
+          });
+        } else if (toolName && toolMessages.has(toolName)) {
+          const existing = toolMessages.get(toolName)!;
+          toolMessages.delete(toolName);
+          this.enqueueMessage(async () => {
+            try { await existing.edit(content); } catch {}
+          });
+        } else {
+          this.enqueueMessage(() => channel.send(content));
         }
       },
       onResult: (result: NdjsonResult) => {

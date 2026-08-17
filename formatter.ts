@@ -5,45 +5,23 @@ const MAX_EMBED_FIELD_LENGTH = 1024;
 const MAX_CODE_BLOCK_LENGTH = 1900;
 
 export function formatToolRunning(event: NdjsonEvent['event']): FormattedOutput {
-  const toolName = event.toolName || 'unknown';
-  const description = event.description || '';
-  const input = event.input ? formatInput(event.input) : '';
-
-  return {
-    embed: {
-      title: `Running \`${toolName}\``,
-      description: description || undefined,
-      color: 0x5865F2, // Discord blurple
-      fields: input ? [{name: 'Input', value: truncate(input, MAX_EMBED_FIELD_LENGTH)}] : undefined,
-    },
-  };
+  const toolName = String(event.toolName || 'unknown');
+  const input = event.input ? formatInputCompact(event.input) : '';
+  const text = input
+    ? `_⏳ Running ${toolName} · ${input}_`
+    : `_⏳ Running ${toolName}_`;
+  return {toolName, content: text};
 }
 
 export function formatToolCompleted(event: NdjsonEvent['event']): FormattedOutput {
-  const toolName = event.toolName || 'unknown';
-  const result = event.result;
-  const resultText = extractResultText(result);
-
-  return {
-    embed: {
-      title: `\`${toolName}\` complete`,
-      color: 0x57F287,
-      fields: resultText ? [{name: 'Result', value: truncate(resultText, MAX_EMBED_FIELD_LENGTH)}] : undefined,
-    },
-  };
+  const toolName = String(event.toolName || 'unknown');
+  return {toolName, content: `_✅ ${toolName} complete_`};
 }
 
 export function formatToolErrored(event: NdjsonEvent['event']): FormattedOutput {
-  const toolName = event.toolName || 'unknown';
-  const error = event.error || 'Unknown error';
-
-  return {
-    embed: {
-      title: `\`${toolName}\` failed`,
-      description: truncate(String(error), 4096),
-      color: 0xED4245, // Red
-    },
-  };
+  const toolName = String(event.toolName || 'unknown');
+  const error = event.error ? ` · ${truncate(String(event.error), 100)}` : '';
+  return {toolName, content: `_❌ ${toolName} failed${error}_`};
 }
 
 function truncate(text: string, maxLength: number): string {
@@ -140,6 +118,22 @@ export function splitMessage(text: string): string[] {
   }
 
   return chunks;
+}
+
+function formatInputCompact(input: unknown): string {
+  if (typeof input === 'string') return truncate(input, 80);
+  try {
+    const obj = input as Record<string, unknown>;
+    for (const key of ['pattern', 'command', 'file_path', 'question', 'content']) {
+      if (obj[key] != null) {
+        const str = typeof obj[key] === 'string' ? obj[key] as string : JSON.stringify(obj[key]);
+        return truncate(str, 80);
+      }
+    }
+    return '';
+  } catch {
+    return '';
+  }
 }
 
 function formatInput(input: unknown): string {

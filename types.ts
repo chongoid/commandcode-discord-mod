@@ -53,6 +53,7 @@ export interface NdjsonResult {
 
 export interface FormattedOutput {
   content?: string;
+  toolName?: string;
   embed?: {
     title?: string;
     description?: string;
