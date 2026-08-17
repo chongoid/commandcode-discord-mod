@@ -21,7 +21,7 @@
 Paste this into a Command Code session — it does everything:
 
 ```
-Install the commandcode-discord mod from https://github.com/chongoid/commandcode-discord — clone it to ~/.commandcode/mods/discord, run npm install, create a systemd service with install-service.sh, and prompt me for my Discord bot token.
+Install the commandcode-discord mod from https://github.com/chongoid/commandcode-discord-mod — clone it to ~/.commandcode/mods/discord, run npm install, create a systemd service with install-service.sh, and prompt me for my Discord bot token.
 ```
 
 For manual setup or prerequisites, see [INSTALL.md](./INSTALL.md).

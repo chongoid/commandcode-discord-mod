@@ -16,7 +16,7 @@
 ## Quick Install (one-liner)
 
 ```bash
-git clone https://github.com/chongoid/commandcode-discord.git ~/.commandcode/mods/discord \
+git clone https://github.com/chongoid/commandcode-discord-mod.git ~/.commandcode/mods/discord \
   && cd ~/.commandcode/mods/discord \
   && npm install \
   && echo "DISCORD_BOT_TOKEN=your-token-here" > .env \
