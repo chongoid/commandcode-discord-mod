@@ -20,21 +20,21 @@ export function formatToolRunning(event: NdjsonEvent['event'], input?: unknown):
   }
 
   const text = context
-    ? `_⏳ ${toolName} · ${context}_`
-    : `_⏳ ${toolName}_`;
+    ? `*⏳ ${toolName} · ${context}*`
+    : `*⏳ ${toolName}*`;
 
   return {toolName, content: text};
 }
 
 export function formatToolCompleted(event: NdjsonEvent['event']): FormattedOutput {
   const toolName = String(event.toolName || 'unknown');
-  return {toolName, content: `_✅ ${toolName} complete_`};
+  return {toolName, content: `*✅ ${toolName} complete*`};
 }
 
 export function formatToolErrored(event: NdjsonEvent['event']): FormattedOutput {
   const toolName = String(event.toolName || 'unknown');
   const error = event.error ? ` · ${truncate(String(event.error), 100)}` : '';
-  return {toolName, content: `_❌ ${toolName} failed${error}_`};
+  return {toolName, content: `*❌ ${toolName} failed${error}*`};
 }
 
 function truncate(text: string, maxLength: number): string {
@@ -146,8 +146,9 @@ function formatInputCompact(toolName: string, input: unknown): string {
     }
 
     // File tools — show path(s)
-    if (toolName === 'read_file' || toolName === 'edit_file' || toolName === 'write_file') {
+    if (toolName === 'read_file' || toolName === 'edit_file' || toolName === 'write_file' || toolName === 'read_directory') {
       if (obj.file_path) return String(obj.file_path);
+      if (obj.path) return String(obj.path);
       if (obj.paths && Array.isArray(obj.paths)) {
         const paths = obj.paths as string[];
         if (paths.length === 1) return paths[0];

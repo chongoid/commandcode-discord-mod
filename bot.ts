@@ -541,15 +541,16 @@ export class DiscordBot {
               : formatToolErrored(event);
             if (!formatted.content) return;
 
-            const queue = toolMessageQueues.get(toolName);
-            if (queue && queue.length > 0) {
-              const existing = queue.shift()!;
-              this.enqueueMessage(async () => {
+            // Queue the edit/send so it runs after any pending tool_running send
+            this.enqueueMessage(async () => {
+              const queue = toolMessageQueues.get(toolName);
+              if (queue && queue.length > 0) {
+                const existing = queue.shift()!;
                 try { await existing.edit(formatted.content!); } catch {}
-              });
-            } else {
-              this.enqueueMessage(() => channel.send(formatted.content!));
-            }
+              } else {
+                try { await channel.send(formatted.content!); } catch {}
+              }
+            });
             break;
           }
         }
