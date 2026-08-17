@@ -46,12 +46,9 @@ export function formatToolErrored(event: NdjsonEvent['event']): FormattedOutput 
   };
 }
 
-export function formatTextDelta(delta: string, currentText: string): {text: string; shouldUpdate: boolean} {
-  const newText = currentText + delta;
-  return {
-    text: newText,
-    shouldUpdate: newText.length < MAX_MESSAGE_LENGTH,
-  };
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength - 3) + '...';
 }
 
 export function formatResult(result: NdjsonResult): FormattedOutput[] {
@@ -143,11 +140,6 @@ export function splitMessage(text: string): string[] {
   }
 
   return chunks;
-}
-
-export function formatCodeBlock(content: string, language: string = ''): string {
-  const truncated = truncate(content, MAX_CODE_BLOCK_LENGTH);
-  return `\`\`\`${language}\n${truncated}\n\`\`\``;
 }
 
 function formatInput(input: unknown): string {

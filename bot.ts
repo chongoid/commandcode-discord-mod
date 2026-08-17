@@ -33,10 +33,11 @@ export class DiscordBot {
   private bridge: SessionBridge;
   private config: DiscordModConfig;
   private trackedThreads = new Set<string>();
-  private messageBuffers = new Map<string, {messages: string[]; timer?: ReturnType<typeof setTimeout>}>();
+  private messageBuffers = new Map<string, {messages: string[]; timer?: ReturnType<typeof setTimeout>; lastMessage?: Message}>();
   private statusCallbacks: Array<(status: string) => void> = [];
   private messageQueue: Array<() => Promise<void>> = [];
   private queueProcessing = false;
+  private maxRetries = 3;
   private stats: UsageStats;
   private archiveInterval?: ReturnType<typeof setInterval>;
 
@@ -50,6 +51,9 @@ export class DiscordBot {
       requestsByUser: {},
       errors: 0,
       startTime: Date.now(),
+      totalTokensInput: 0,
+      totalTokensOutput: 0,
+      totalDurationMs: 0,
     };
 
     this.client = new Client({
@@ -110,17 +114,21 @@ export class DiscordBot {
     while (this.messageQueue.length > 0) {
       const fn = this.messageQueue.shift();
       if (fn) {
-        try {
-          await fn();
-        } catch (err) {
-          // Rate limited — wait and retry
-          if ((err as any)?.code === 50013 || (err as any)?.status === 429) {
-            const retryAfter = (err as any)?.retryAfter || 1000;
-            await new Promise(r => setTimeout(r, retryAfter));
-            this.messageQueue.unshift(fn); // Re-queue
+        let retries = 0;
+        while (retries < this.maxRetries) {
+          try {
+            await fn();
+            break;
+          } catch (err) {
+            if ((err as any)?.code === 50013 || (err as any)?.status === 429) {
+              retries++;
+              const retryAfter = (err as any)?.retryAfter || 1000;
+              await new Promise(r => setTimeout(r, retryAfter * retries));
+            } else {
+              break; // Non-rate-limit error, don't retry
+            }
           }
         }
-        // Small delay between messages to avoid rate limits
         await new Promise(r => setTimeout(r, 100));
       }
     }
@@ -235,7 +243,7 @@ export class DiscordBot {
           try {
             const thread = await this.client.channels.fetch(threadId) as ThreadChannel;
             if (thread && !thread.archived) {
-              await thread.setArchived(true, 'Inactive for24 hours');
+              await thread.setArchived(true, 'Inactive for 24 hours');
               console.log(`[Archive] Archived thread ${threadId}`);
             }
             this.trackedThreads.delete(threadId);
@@ -380,6 +388,7 @@ export class DiscordBot {
 
     // Track stats
     this.stats.totalRequests++;
+    this.stats.totalSessions++;
     this.stats.requestsByUser[message.author.id] = (this.stats.requestsByUser[message.author.id] || 0) + 1;
 
     // Process in DM channel
@@ -500,6 +509,16 @@ export class DiscordBot {
       onResult: (result: NdjsonResult) => {
         clearInterval(typingInterval);
 
+        // Track token usage
+        if (result.usage) {
+          const u = result.usage as Record<string, unknown>;
+          this.stats.totalTokensInput += Number(u.inputTokens ?? u.input_tokens ?? 0);
+          this.stats.totalTokensOutput += Number(u.outputTokens ?? u.output_tokens ?? 0);
+        }
+        if (result.durationMs) {
+          this.stats.totalDurationMs += result.durationMs;
+        }
+
         const outputs = formatResult(result);
         for (const output of outputs) {
           if (output.content) {
@@ -615,27 +634,85 @@ export class DiscordBot {
           '',
           '**Tips:**',
           '• Send multiple messages quickly — I\'ll batch them together',
-          '• Threads auto-archive after24 hours of inactivity',
+          '• Threads auto-archive after 24 hours of inactivity',
         ].join('\n');
         await interaction.reply({content: helpText, ephemeral: true});
         break;
       }
 
       case 'stats': {
-        const uptime = Math.floor((Date.now() - this.stats.startTime) / 1000);
-        const hours = Math.floor(uptime / 3600);
-        const mins = Math.floor((uptime % 3600) / 60);
-        const statsText = [
-          '**Usage Statistics**',
-          '',
-          `**Uptime:** ${hours}h ${mins}m`,
-          `**Total Requests:** ${this.stats.totalRequests}`,
-          `**Total Sessions:** ${this.stats.totalSessions}`,
-          `**Active Threads:** ${this.trackedThreads.size}`,
-          `**Errors:** ${this.stats.errors}`,
-          `**Guilds:** ${this.client.guilds.cache.size}`,
-        ].join('\n');
-        await interaction.reply({content: statsText, ephemeral: true});
+        const uptime = Date.now() - this.stats.startTime;
+        const days = Math.floor(uptime / 86400000);
+        const hours = Math.floor((uptime % 86400000) / 3600000);
+        const mins = Math.floor((uptime % 3600000) / 60000);
+        const uptimeStr = days > 0 ? `${days}d ${hours}h ${mins}m` : `${hours}h ${mins}m`;
+
+        const totalTokens = this.stats.totalTokensInput + this.stats.totalTokensOutput;
+        const durationSec = (this.stats.totalDurationMs / 1000).toFixed(1);
+        const avgTokens = this.stats.totalRequests > 0
+          ? Math.round(totalTokens / this.stats.totalRequests)
+          : 0;
+        const errorRate = this.stats.totalRequests > 0
+          ? ((this.stats.errors / this.stats.totalRequests) * 100).toFixed(1)
+          : '0';
+
+        // Top guilds
+        const topGuilds = Object.entries(this.stats.requestsByGuild)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3)
+          .map(([id, count]) => {
+            const guild = this.client.guilds.cache.get(id);
+            return `${guild?.name || id}: **${count}**`;
+          })
+          .join('\n') || 'None';
+
+        const embed = {
+          title: '📊 Command Code Discord Stats',
+          color: 0x5865F2,
+          fields: [
+            {
+              name: '⏱️ Uptime',
+              value: uptimeStr,
+              inline: true,
+            },
+            {
+              name: '📨 Requests',
+              value: String(this.stats.totalRequests),
+              inline: true,
+            },
+            {
+              name: '🧵 Sessions',
+              value: String(this.stats.totalSessions),
+              inline: true,
+            },
+            {
+              name: '🪙 Tokens',
+              value: `${totalTokens.toLocaleString()} total\n${this.stats.totalTokensInput.toLocaleString()} in / ${this.stats.totalTokensOutput.toLocaleString()} out\n~${avgTokens} avg/request`,
+              inline: true,
+            },
+            {
+              name: '⏱️ Processing',
+              value: `${durationSec}s total`,
+              inline: true,
+            },
+            {
+              name: '❌ Errors',
+              value: `${this.stats.errors} (${errorRate}%)`,
+              inline: true,
+            },
+            {
+              name: '🏠 Top Guilds',
+              value: topGuilds,
+              inline: false,
+            },
+          ],
+          footer: {
+            text: `Active threads: ${this.trackedThreads.size} • Guilds: ${this.client.guilds.cache.size}`,
+          },
+          timestamp: new Date().toISOString(),
+        };
+
+        await interaction.reply({embeds: [embed], ephemeral: true});
         break;
       }
 
@@ -687,7 +764,8 @@ export class DiscordBot {
           return;
         }
         const modelName = interaction.options.getString('name', true);
-        await interaction.reply(`Model preference noted: **${modelName}**. This will apply to new sessions in this thread.`);
+        this.bridge.setModel(threadId, modelName);
+        await interaction.reply(`Model set to **${modelName}**. This will apply to new sessions in this thread.`);
         break;
       }
 

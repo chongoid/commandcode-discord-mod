@@ -50,6 +50,23 @@ export class SessionBridge {
     this.saveState();
   }
 
+  setModel(threadId: string, model: string): void {
+    const session = this.sessions.get(threadId);
+    if (session) {
+      session.model = model;
+    } else {
+      this.sessions.set(threadId, {
+        threadId,
+        channelId: threadId,
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+        requestCount: 0,
+        model,
+      });
+    }
+    this.saveState();
+  }
+
   resetSession(threadId: string): void {
     this.stopProcess(threadId);
     this.sessions.delete(threadId);
@@ -97,7 +114,7 @@ export class SessionBridge {
     session.lastActiveAt = Date.now();
     session.requestCount = (session.requestCount || 0) + 1;
 
-    const args = this.buildArgs(prompt, session.sessionId);
+    const args = this.buildArgs(prompt, session.sessionId, session.model);
     const cmdPath = this.findCmd();
     log(`Spawning: ${cmdPath} ${args.join(' ')}`);
 
@@ -178,7 +195,6 @@ export class SessionBridge {
   private findCmd(): string {
     const candidates = [
       join(process.env.HOME || '', '.local/bin/cmd'),
-      '/home/alsinas/.local/bin/cmd',
       'cmd',
     ];
     for (const c of candidates) {
@@ -189,9 +205,10 @@ export class SessionBridge {
     return 'cmd';
   }
 
-  private buildArgs(prompt: string, sessionId?: string): string[] {
+  private buildArgs(prompt: string, sessionId?: string, model?: string): string[] {
     const args = ['-p', prompt, '--output-format', 'json', '--verbose'];
     if (sessionId) args.push('--resume', sessionId);
+    if (model) args.push('--model', model);
     if (this.config.yolo) args.push('--yolo');
     if (this.config.maxTurns) args.push('--max-turns', String(this.config.maxTurns));
     return args;

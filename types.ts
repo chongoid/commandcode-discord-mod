@@ -19,6 +19,7 @@ export interface ThreadSession {
   lastActiveAt: number;
   title?: string;
   requestCount: number;
+  model?: string;
 }
 
 export interface UsageStats {
@@ -28,6 +29,9 @@ export interface UsageStats {
   requestsByUser: Record<string, number>;
   errors: number;
   startTime: number;
+  totalTokensInput: number;
+  totalTokensOutput: number;
+  totalDurationMs: number;
 }
 
 export interface ThreadState {
@@ -58,8 +62,6 @@ export interface NdjsonResult {
   error?: string;
 }
 
-export type NdjsonLine = NdjsonEvent | NdjsonResult;
-
 export interface FormattedOutput {
   content?: string;
   embed?: {
@@ -67,9 +69,5 @@ export interface FormattedOutput {
     description?: string;
     color?: number;
     fields?: Array<{name: string; value: string; inline?: boolean}>;
-  };
-  codeBlock?: {
-    language: string;
-    content: string;
   };
 }
