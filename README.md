@@ -1,6 +1,6 @@
 # Command Code Discord Bot
 
-Run Command Code (Claude-powered coding agent) right inside Discord. Mention the bot in a thread or DM to start coding — it gives you live status updates and posts the final answer when done.
+Run Command Code right inside Discord. Mention the bot in a thread or DM to start coding — it gives you live status updates and posts the final answer when done.
 
 ## Quick start
 
