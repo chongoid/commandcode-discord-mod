@@ -25,7 +25,8 @@ export class DiscordAdapter implements DiscordPort {
     const message = await channel.send({content: '🔵 Working…', allowedMentions: SAFE_MENTIONS});
     return {
       messageId: message.id,
-      edit: async (content: string) => { await message.edit({content, allowedMentions: SAFE_MENTIONS}); }
+      edit: async (content: string) => { await message.edit({content, allowedMentions: SAFE_MENTIONS}); },
+      delete: async () => { await message.delete(); }
     };
   }
   async typing(destination: Destination): Promise<void> {const channel = await this.channel(destination.channelId); await channel.sendTyping();}

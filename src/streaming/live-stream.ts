@@ -13,15 +13,18 @@ const asString = (v: unknown, fb = ''): string => (typeof v === 'string' && v.tr
 const rawString = (v: unknown, fb = ''): string => (typeof v === 'string' ? v : fb);
 
 /**
- * Mirrors the TUI experience in Discord: the assistant's reply is streamed into
- * its OWN message (one per turn, edited in place as tokens arrive, then left as
- * a normal message), and each tool call gets its own message with a real label.
- * Retries / subagent / compaction notices go to a small sticky log message.
+ * Mirrors the TUI in Discord: the assistant's reply streams into its own message
+ * (one per turn, edited in place as tokens arrive), each tool call gets its own
+ * labeled message, and retries/notices go to a small sticky log.
+ * On completion all of these live streamed messages are deleted, so the user is
+ * left with a single clean, non-edited final answer instead of duplicates.
  */
 export class LiveStream {
   private chain: Promise<void> = Promise.resolve();
   private closed = false;
-  private startedAt = Date.now();
+
+  // References to every message this stream created, so finalize() can remove them.
+  private created: StreamHandle[] = [];
 
   // Current assistant message (per turn)
   private turnHandle: StreamHandle | null = null;
@@ -61,24 +64,23 @@ export class LiveStream {
     }
   }
 
-  async finalize(status: 'completed' | 'errored' | 'cancelled', detail?: string): Promise<void> {
+  async finalize(status: 'completed' | 'errored' | 'cancelled', _detail?: string): Promise<void> {
     this.endTurn();
     this.flushLog();
     await this.chain;
     this.closed = true;
-    if (status === 'completed') {
-      // Collapse the streamed message to a marker; the guaranteed final answer posts below via the outbox.
-      const secs = Math.round((Date.now() - this.startedAt) / 1000);
-      if (this.turnHandle || this.turnText) {
-        await this.enqueue(async () => {
-          if (!this.turnHandle) this.turnHandle = await this.discord.streamSend(this.destination);
-          await this.turnHandle.edit(`✅ Completed · ${secs}s`);
-        }).catch(() => undefined);
-      }
-    } else if (status === 'cancelled') {
+    // Remove the live streamed messages. The canonical final answer (or error) is
+    // posted via the outbox, so the user is left with one clean message, not duplicates.
+    await this.cleanup();
+    if (status === 'cancelled') {
       await this.enqueue(() => this.discord.send(this.destination, '🚫 Cancelled.', `cancel:${this.turnSeq}`).then(() => undefined)).catch(() => undefined);
     }
-    // errored: the outbox posts the canonical error final.
+  }
+
+  private async cleanup(): Promise<void> {
+    const created = this.created;
+    this.created = [];
+    await Promise.allSettled(created.map(handle => handle.delete().catch(() => undefined)));
   }
 
   private beginTurn(): void {
@@ -109,7 +111,7 @@ export class LiveStream {
     const body = this.renderTurn();
     this.turnDirty = false;
     return this.enqueue(async () => {
-      if (!this.turnHandle) this.turnHandle = await this.discord.streamSend(this.destination);
+      if (!this.turnHandle) {this.turnHandle = await this.discord.streamSend(this.destination); this.created.push(this.turnHandle);}
       await this.turnHandle.edit(body);
     }).catch(() => {this.turnDirty = true;});
   }
@@ -136,6 +138,7 @@ export class LiveStream {
     this.tools.set(id, {handle: null, icon, label});
     void this.enqueue(async () => {
       const handle = await this.discord.streamSend(this.destination);
+      this.created.push(handle);
       const rec = this.tools.get(id);
       if (rec) rec.handle = handle;
       await handle.edit(`${icon} ${label}`);
@@ -156,8 +159,8 @@ export class LiveStream {
     if (this.closed || !this.log.dirty) return;
     this.log.dirty = false;
     void this.enqueue(async () => {
-      if (!this.log.handle) this.log.handle = await this.discord.streamSend(this.destination);
-      await this.log.handle.edit(this.log.lines.map(l => `> ${l}`).join('\n'));
+      if (!this.log.handle) {this.log.handle = await this.discord.streamSend(this.destination); this.created.push(this.log.handle);}
+      await this.log.handle.edit(this.log.lines.map(line => `> ${line}`).join('\n'));
     }).catch(() => {this.log.dirty = true;});
   }
 }

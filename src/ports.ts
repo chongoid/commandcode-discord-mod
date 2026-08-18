@@ -6,6 +6,7 @@ export interface DeliveryReceipt {messageId: string}
 export interface StreamHandle {
   readonly messageId?: string;
   edit(content: string): Promise<void>;
+  delete(): Promise<void>;
 }
 export interface DiscordPort {
   send(destination: Destination, content: string, nonce: string): Promise<DeliveryReceipt>;

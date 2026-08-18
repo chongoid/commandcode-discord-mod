@@ -16,7 +16,7 @@ export class FakeDiscord implements DiscordPort {
     const id = `m${this.sent.length + 1}`; this.nonces.set(nonce, id); this.sent.push({destination, content, id, nonce}); return {messageId: id};
   }
   async edit(_destination: Destination, messageId: string, content: string) {if (this.failEdits) {const error = new Error('Unknown Message') as Error & {code: number}; error.code = 10008; throw error;} this.edits.push({messageId, content});}
-  async streamSend(_destination: Destination) {const id = `s${this.edits.length + 1}`; return {messageId: id, edit: async (content: string) => {this.edits.push({messageId: id, content});}};}
+  async streamSend(_destination: Destination) {const id = `s${this.edits.length + 1}`; const deleted: string[] = []; return {messageId: id, deleted, edit: async (content: string) => {this.edits.push({messageId: id, content});}, delete: async () => {deleted.push(id);}};}
   async typing() {this.typingCount++;}
   isPermanentError(error: unknown): boolean {return Number((error as {code?: unknown})?.code) === 10008;}
 }
