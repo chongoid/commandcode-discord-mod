@@ -9,7 +9,8 @@ export type ProgressState = 'queued' | 'running' | 'completed' | 'errored' | 'de
 export type OutboxState = 'pending' | 'in_flight' | 'delivered' | 'retryable_error' | 'permanent_error';
 
 export interface ProgressItem {id: string; kind: 'tool' | 'subagent' | 'notice'; name: string; context?: string; state: ProgressState; updatedAt: number}
-export interface ProgressSnapshot {tools: Record<string, ProgressItem>; subagents: Record<string, ProgressItem>; recent: ProgressItem[]; notices: string[]}
+export type RunPhase = 'starting' | 'requesting_model' | 'receiving_response' | 'running_tools' | 'between_turns';
+export interface ProgressSnapshot {tools: Record<string, ProgressItem>; subagents: Record<string, ProgressItem>; recent: ProgressItem[]; notices: string[]; phase?: RunPhase; turn?: number; model?: string; lastActivityAt?: number; lastActivity?: string}
 export interface RequestRecord {id: string; conversationId: string; sourceMessageId: string; prompt: string; state: RequestState; queuePosition?: number; acceptedAt: number; startedAt?: number; finishedAt?: number; attemptId?: string; statusMessageId?: string; finalText?: string; error?: string; sessionIdAtStart?: string}
 export interface Conversation {id: string; destination: Destination; title?: string; model?: string; sessionId?: string; sessionState: SessionState; activeRequestId?: string; queue: string[]; paused: boolean; resetNoticePending: boolean; createdAt: number; updatedAt: number}
 export type OutboxKind = 'status' | 'final' | 'notice';
@@ -21,4 +22,4 @@ export function emptyState(now = Date.now()): AppState {
   return {version: STATE_VERSION, conversations: {}, requests: {}, progress: {}, outbox: [], runtime: {ready: false, heartbeatAt: now, startedAt: now, activeCount: 0, queuedCount: 0, totalRequests: 0, totalCompleted: 0, totalErrors: 0}, migratedLegacy: false};
 }
 
-export function newProgress(): ProgressSnapshot {return {tools: {}, subagents: {}, recent: [], notices: []};}
+export function newProgress(): ProgressSnapshot {return {tools: {}, subagents: {}, recent: [], notices: [], phase: 'starting'};}

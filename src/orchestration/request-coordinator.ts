@@ -13,6 +13,7 @@ export class RequestCoordinator {
   private pumps = new Map<string, Promise<void>>();
   private leases = new Map<string, TypingLease>();
   private statusChains = new Map<string, Promise<void>>();
+  private statusRefreshers = new Map<string, NodeJS.Timeout>();
   private acceptChain = Promise.resolve();
   private stopping = false;
   constructor(private readonly state: AppState, private readonly store: StateStore, private readonly runner: RunnerPort, private readonly outbox: OutboxWorker, private readonly options: CoordinatorOptions) {}
@@ -75,6 +76,7 @@ export class RequestCoordinator {
   async shutdown(): Promise<void> {
     this.stopping = true;
     for (const lease of this.leases.values()) lease.stop(); this.leases.clear();
+    for (const timer of this.statusRefreshers.values()) clearInterval(timer); this.statusRefreshers.clear();
     for (const conversation of Object.values(this.state.conversations)) {
       for (const queuedId of conversation.queue) {const queued = this.state.requests[queuedId]; if (queued) {queued.state = 'cancelled'; queued.finishedAt = Date.now(); queued.error = 'Cancelled because the service stopped.'; await this.scheduleStatus(queued);}}
       conversation.queue = [];
@@ -91,11 +93,11 @@ export class RequestCoordinator {
   private async execute(conversation: Conversation, request: RequestRecord): Promise<boolean> {
     if (!request.statusMessageId) {await this.outbox.flush(); if (!request.statusMessageId) return false;}
     const attemptId = randomUUID(); request.attemptId = attemptId; request.queuePosition = undefined; request.sessionIdAtStart = conversation.sessionId; request.state = 'starting'; request.startedAt = Date.now(); await this.scheduleStatus(request);
-    const lease = new TypingLease(this.outbox.discord, conversation.destination); this.leases.set(request.id, lease); lease.start(); request.state = 'running'; await this.scheduleStatus(request);
+    const lease = new TypingLease(this.outbox.discord, conversation.destination); this.leases.set(request.id, lease); lease.start(); request.state = 'running'; await this.scheduleStatus(request); this.startStatusRefresh(request);
     let outcome;
     try {outcome = await this.runner.run({attemptId, prompt: request.prompt, sessionId: conversation.sessionState === 'usable' ? conversation.sessionId : undefined, model: conversation.model, cwd: this.options.workingDir, yolo: this.options.yolo, maxTurns: this.options.maxTurns, timeoutMs: this.options.timeoutMs}, event => {if (request.attemptId !== attemptId || !['running', 'cancelling'].includes(request.state)) return; this.state.progress[request.id] = reduceProgress(this.state.progress[request.id]!, event); void this.scheduleStatus(request);});}
     catch (error) {outcome = {kind: 'error' as const, error: error instanceof Error ? error.message : String(error)};}
-    lease.stop(); this.leases.delete(request.id); await this.drainStatuses([request.id]); if (request.attemptId !== attemptId) return true;
+    lease.stop(); this.leases.delete(request.id); this.stopStatusRefresh(request.id); await this.drainStatuses([request.id]); if (request.attemptId !== attemptId) return true;
     if (this.stopping) {request.state = 'interrupted_unknown'; request.error = 'Service stopped during execution; outcome unknown.'; conversation.paused = true; conversation.resetNoticePending = true;}
     else if (outcome.kind === 'success') {request.state = 'completed'; request.finalText = outcome.finalText || 'Completed without a text response.'; if (outcome.sessionId?.trim()) {conversation.sessionId = outcome.sessionId.trim(); conversation.sessionState = 'usable';} this.state.runtime.totalCompleted++; await this.scheduleStatus(request); const finalIds: string[] = []; for (const [index, content] of chunkMarkdown(request.finalText).entries()) {const id = `final:${request.id}:${index}`; finalIds.push(id); await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', content, id, index));} await this.outbox.flush();}
     else if (outcome.kind === 'stale_session') {request.state = 'errored'; request.error = 'The previous Command Code session is unavailable. Send a new message to start fresh.'; conversation.sessionState = 'reset_required'; conversation.resetNoticePending = true; this.state.runtime.totalErrors++; await this.scheduleStatus(request); await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', request.error, `final:${request.id}:0`, 0));}
@@ -104,6 +106,8 @@ export class RequestCoordinator {
     request.finishedAt = Date.now(); delete conversation.activeRequestId; conversation.updatedAt = Date.now(); this.updateCounts(); await this.store.save(this.state); await this.drainStatuses([request.id]); await this.outbox.flush(); return true;
   }
 
+  private startStatusRefresh(request: RequestRecord): void {this.stopStatusRefresh(request.id); const timer = setInterval(() => {if (['running', 'cancelling', 'starting'].includes(request.state)) void this.scheduleStatus(request); else this.stopStatusRefresh(request.id);}, 15_000); this.statusRefreshers.set(request.id, timer);}
+  private stopStatusRefresh(requestId: string): void {const timer = this.statusRefreshers.get(requestId); if (timer) clearInterval(timer); this.statusRefreshers.delete(requestId);}
   private async queueStatus(request: RequestRecord): Promise<void> {await this.outbox.enqueue(this.item(request.conversationId, request.id, 'status', renderStatus(request, this.state.progress[request.id]!), `status:${request.id}`));}
   private scheduleStatus(request: RequestRecord): Promise<void> {const prior = this.statusChains.get(request.id) || Promise.resolve(); const next = prior.then(async () => {const item = this.item(request.conversationId, request.id, 'status', renderStatus(request, this.state.progress[request.id]!), `status-edit:${request.id}:${Date.now()}`); item.operation = request.statusMessageId ? 'edit' : 'send'; item.messageId = request.statusMessageId; await this.outbox.enqueue(item); await this.outbox.flush();}); this.statusChains.set(request.id, next.catch(() => undefined)); return next;}
   private async drainStatuses(ids?: string[]): Promise<void> {const values = ids ? ids.map(id => this.statusChains.get(id)).filter((value): value is Promise<void> => Boolean(value)) : [...this.statusChains.values()]; await Promise.all(values);}
