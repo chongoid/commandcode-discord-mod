@@ -33,7 +33,7 @@ describe('coordinator', () => {
     x.state.progress.r = newProgress(); x.state.progress.q = newProgress();
     await x.coordinator.recoverState();
     expect(x.discord.sent).toHaveLength(0);
-    expect(x.state.requests.r.state).toBe('interrupted_unknown'); expect(x.state.requests.q.state).toBe('cancelled'); expect(x.runner.runs).toHaveLength(0);
+    expect(x.state.requests.r.state).toBe('interrupted_unknown'); expect(x.state.requests.q.state).toBe('cancelled'); expect(x.state.conversations.c.activeRequestId).toBeUndefined(); expect(x.state.runtime.activeCount).toBe(0); expect(x.runner.runs).toHaveLength(0);
     await x.coordinator.resumeDeliveryAndQueues();
     expect(x.discord.sent.filter(message => message.content.includes('outcome is unknown'))).toHaveLength(1);
   });

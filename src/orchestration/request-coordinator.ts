@@ -21,11 +21,12 @@ export class RequestCoordinator {
   async recoverState(): Promise<void> {
     const now = Date.now();
     for (const request of Object.values(this.state.requests)) {
-      if (!['starting', 'running', 'cancelling'].includes(request.state)) continue;
-      request.state = 'interrupted_unknown'; request.finishedAt = now; request.error = 'Service restarted during execution; outcome unknown and work was not repeated.';
+      if (!['starting', 'running', 'cancelling', 'interrupted_unknown'].includes(request.state)) continue;
+      request.state = 'interrupted_unknown'; request.finishedAt ||= now; request.error ||= 'Service restarted during execution; outcome unknown and work was not repeated.';
       const conversation = this.state.conversations[request.conversationId];
       if (!conversation) continue;
-      delete conversation.activeRequestId; conversation.paused = true; conversation.resetNoticePending = true;
+      if (conversation.activeRequestId === request.id) delete conversation.activeRequestId;
+      conversation.paused = true; conversation.resetNoticePending = true;
       for (const queuedId of conversation.queue) {const queued = this.state.requests[queuedId]; if (queued) {queued.state = 'cancelled'; queued.finishedAt = now; queued.error = 'Cancelled because the prior request was interrupted.'; await this.queueStatus(queued);}}
       conversation.queue = [];
       await this.outbox.enqueue(this.item(conversation.id, request.id, 'notice', '⚠️ A request was interrupted by restart. Its outcome is unknown, so no work was repeated. Queued follow-ups were cancelled. Send a new message to continue with fresh context.', `recovery:${request.id}`));
