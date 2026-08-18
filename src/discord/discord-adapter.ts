@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {ChannelType, Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, type ChatInputCommandInteraction, type Message, type SendableChannels, type ThreadChannel} from 'discord.js';
 import type {AppState, Destination} from '../domain.js';
-import type {DiscordPort} from '../ports.js';
+import type {DiscordPort, StreamHandle} from '../ports.js';
 import type {Config} from '../config.js';
 import {isUserAllowed} from '../config.js';
 import type {RequestCoordinator} from '../orchestration/request-coordinator.js';
@@ -20,6 +20,14 @@ export class DiscordAdapter implements DiscordPort {
   async stop(): Promise<void> {this.client.destroy();}
   async send(destination: Destination, content: string, nonce: string): Promise<{messageId: string}> {const channel = await this.channel(destination.channelId); const message = await channel.send({content, nonce: stableNonce(nonce), enforceNonce: true, allowedMentions: SAFE_MENTIONS}); return {messageId: message.id};}
   async edit(destination: Destination, messageId: string, content: string): Promise<void> {const channel = await this.channel(destination.channelId); const message = await channel.messages.fetch(messageId); await message.edit({content, allowedMentions: SAFE_MENTIONS});}
+  async streamSend(destination: Destination): Promise<StreamHandle> {
+    const channel = await this.channel(destination.channelId);
+    const message = await channel.send({content: '🔵 Working…', allowedMentions: SAFE_MENTIONS});
+    return {
+      messageId: message.id,
+      edit: async (content: string) => { await message.edit({content, allowedMentions: SAFE_MENTIONS}); }
+    };
+  }
   async typing(destination: Destination): Promise<void> {const channel = await this.channel(destination.channelId); await channel.sendTyping();}
   isPermanentError(error: unknown): boolean {return [10003,10008,50001,50013].includes(Number((error as {code?: unknown})?.code));}
   private async channel(id: string): Promise<SendableChannels> {const channel = await this.client.channels.fetch(id); if (!channel?.isSendable()) throw new Error(`Discord destination ${id} is unavailable`); return channel;}
