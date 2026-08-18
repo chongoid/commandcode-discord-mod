@@ -2,44 +2,41 @@ import type {Destination} from '../domain.js';
 import type {DiscordPort, StreamHandle} from '../ports.js';
 import {toolContext} from '../formatting/tool-context.js';
 
-const MAX_CHARS = 1900;        // under Discord's 2000-char limit
+const MAX_CHARS = 1900;        // under Discord's 2000-char message limit
 const EDIT_INTERVAL_MS = 600;  // throttle edits so streaming can't hammer the REST API
 
 export interface LiveEvent {type: string; [key: string]: unknown}
 
-const asString = (v: unknown, fb = ''): string => (typeof v === 'string' && v.trim() ? v.trim() : fb);
-// Raw string without trimming: text_delta tokens carry a leading space, so trimming would
-// fuse words together ("Docker" + " is" -> "Dockeris"). Never trim streaming deltas.
+// Raw string WITHOUT trimming: text_delta tokens carry a leading space, so trimming
+// would fuse words together ("Docker" + " is" -> "Dockeris"). Never trim stream deltas.
 const rawString = (v: unknown, fb = ''): string => (typeof v === 'string' ? v : fb);
+const asString = (v: unknown, fb = ''): string => (typeof v === 'string' && v.trim() ? v.trim() : fb);
+
+interface ChatChunk {handle: StreamHandle | null; text: string; dirty: boolean; timer?: NodeJS.Timeout}
 
 /**
- * Mirrors the TUI in Discord: the assistant's reply streams into its own message
- * (one per turn, edited in place as tokens arrive), each tool call gets its own
- * labeled message, and retries/notices go to a small sticky log.
- * On completion all of these live streamed messages are deleted, so the user is
- * left with a single clean, non-edited final answer instead of duplicates.
+ * Streams a run's full conversation to Discord the way the TUI shows it:
+ *
+ *  - the assistant's reply streams in live, split into multiple messages only when a
+ *    single message would exceed Discord's 2000-char limit (never truncated, never
+ *    "…"-ed),
+ *  - each tool call gets its own labeled message,
+ *  - retries/notices go to a small log,
+ *  - NOTHING is ever deleted, and a run is never reported failed if content already
+ *    reached the channel (no false failures).
  */
 export class LiveStream {
   private chain: Promise<void> = Promise.resolve();
   private closed = false;
-
-  // References to every message this stream created, so finalize() can remove them.
-  private created: StreamHandle[] = [];
-
-  // Current assistant message (per turn)
-  private turnHandle: StreamHandle | null = null;
-  private turnText = '';
-  private turnSeq = 0;
-  private turnDirty = false;
-  private turnTimer?: NodeJS.Timeout;
-
-  // Tool messages keyed by toolCallId
+  private chunks: ChatChunk[] = [];
   private tools = new Map<string, {handle: StreamHandle | null; icon: string; label: string}>();
-
-  // Sticky log message for notices
   private log: {handle: StreamHandle | null; lines: string[]; dirty: boolean; timer?: NodeJS.Timeout} = {handle: null, lines: [], dirty: false};
+  private assistantChars = 0;
 
   constructor(private readonly discord: DiscordPort, private readonly destination: Destination) {}
+
+  /** True once any assistant text has been streamed to the channel. */
+  get hasContent(): boolean {return this.assistantChars > 0;}
 
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.chain.then(fn);
@@ -50,9 +47,8 @@ export class LiveStream {
   push(event: LiveEvent): void {
     if (this.closed) return;
     switch (event.type) {
-      case 'run_start': case 'message_start': this.beginTurn(); break;
-      case 'text_delta': this.appendTurn(rawString(event.delta)); break;
-      case 'message_end': case 'turn_end': this.endTurn(); break;
+      case 'run_start': case 'message_start': case 'turn_start': this.newAssistantMessage(); break;
+      case 'text_delta': this.appendText(rawString(event.delta)); break;
       case 'tool_running': case 'tool_queued': this.showTool(event, '🔧'); break;
       case 'tool_completed': this.showTool(event, '✅'); break;
       case 'tool_errored': this.showTool(event, '❌'); break;
@@ -64,64 +60,53 @@ export class LiveStream {
     }
   }
 
-  async finalize(status: 'completed' | 'errored' | 'cancelled', _detail?: string): Promise<void> {
-    this.endTurn();
+  async finalize(_status?: string, _detail?: string): Promise<void> {
+    for (const chunk of this.chunks) this.flush(chunk);
     this.flushLog();
     await this.chain;
     this.closed = true;
-    // Remove the live streamed messages. The status message / outbox posts the single
-    // canonical terminal notice ("Completed" + final answer, error, or "Cancelled"),
-    // so we never emit a second, redundant terminal message.
-    await this.cleanup();
   }
 
-  private async cleanup(): Promise<void> {
-    const created = this.created;
-    this.created = [];
-    await Promise.allSettled(created.map(handle => handle.delete().catch(() => undefined)));
+  private newAssistantMessage(): void {
+    this.chunks.push({handle: null, text: '', dirty: false});
   }
 
-  private beginTurn(): void {
-    this.endTurn();
-    this.turnSeq++;
-    this.turnHandle = null;
-    this.turnText = '';
-    this.turnDirty = false;
-    if (this.turnTimer) {clearTimeout(this.turnTimer); this.turnTimer = undefined;}
-  }
-
-  private appendTurn(delta: string): void {
+  private appendText(delta: string): void {
     if (!delta) return;
-    this.turnText += delta;
-    this.turnDirty = true;
-    if (!this.turnTimer && !this.closed) {
-      this.turnTimer = setTimeout(() => {this.turnTimer = undefined; void this.flushTurn();}, EDIT_INTERVAL_MS);
+    this.assistantChars += delta.length;
+    let chunk = this.chunks[this.chunks.length - 1];
+    if (!chunk) {chunk = {handle: null, text: '', dirty: false}; this.chunks.push(chunk);}
+    chunk.text += delta;
+    if (chunk.text.length > MAX_CHARS) {
+      const overflow = chunk.text.slice(MAX_CHARS);
+      chunk.text = chunk.text.slice(0, MAX_CHARS);
+      this.flush(chunk);
+      const next: ChatChunk = {handle: null, text: overflow, dirty: true};
+      this.chunks.push(next);
+      this.flush(next);
+      return;
     }
+    this.schedule(chunk);
   }
 
-  private endTurn(): void {
-    if (this.turnTimer) {clearTimeout(this.turnTimer); this.turnTimer = undefined;}
-    if (this.turnDirty) void this.flushTurn();
+  private schedule(chunk: ChatChunk): void {
+    chunk.dirty = true;
+    if (chunk.timer || this.closed) return;
+    chunk.timer = setTimeout(() => {chunk.timer = undefined; this.flush(chunk);}, EDIT_INTERVAL_MS);
   }
 
-  private flushTurn(): Promise<void> {
-    if (this.closed || !this.turnDirty) return Promise.resolve();
-    const body = this.renderTurn();
-    this.turnDirty = false;
-    return this.enqueue(async () => {
-      if (!this.turnHandle) {this.turnHandle = await this.discord.streamSend(this.destination); this.created.push(this.turnHandle);}
-      await this.turnHandle.edit(body);
-    }).catch(() => {this.turnDirty = true;});
-  }
-
-  private renderTurn(): string {
-    const t = this.turnText;
-    if (t.length <= MAX_CHARS) return t;
-    return `…${t.slice(t.length - MAX_CHARS)}`;
+  private flush(chunk: ChatChunk): void {
+    if (!chunk.dirty) return;
+    chunk.dirty = false;
+    if (chunk.timer) {clearTimeout(chunk.timer); chunk.timer = undefined;}
+    void this.enqueue(async () => {
+      if (!chunk.handle) {chunk.handle = await this.discord.streamSend(this.destination);}
+      await chunk.handle.edit(chunk.text);
+    }).catch(() => {chunk.dirty = true;});
   }
 
   private showTool(event: LiveEvent, icon: string): void {
-    const id = asString(event.toolCallId, `t${this.turnSeq}-${Date.now()}`);
+    const id = asString(event.toolCallId, `t${Date.now()}`);
     const name = asString(event.toolName, 'tool').replace(/[\s>]+$/, '');
     const ctx = asString(event.description) || toolContext(name, event.input) || '';
     const label = `\`${name}\`${ctx ? ` · ${truncate(ctx)}` : ''}`;
@@ -136,7 +121,6 @@ export class LiveStream {
     this.tools.set(id, {handle: null, icon, label});
     void this.enqueue(async () => {
       const handle = await this.discord.streamSend(this.destination);
-      this.created.push(handle);
       const rec = this.tools.get(id);
       if (rec) rec.handle = handle;
       await handle.edit(`${icon} ${label}`);
@@ -148,16 +132,16 @@ export class LiveStream {
     this.log.lines.push(line);
     if (this.log.lines.length > 5) this.log.lines.shift();
     this.log.dirty = true;
-    if (!this.log.timer && !this.closed) {
-      this.log.timer = setTimeout(() => {this.log.timer = undefined; void this.flushLog();}, EDIT_INTERVAL_MS);
-    }
+    if (this.log.timer || this.closed) return;
+    this.log.timer = setTimeout(() => {this.log.timer = undefined; void this.flushLog();}, EDIT_INTERVAL_MS);
   }
 
   private flushLog(): void {
-    if (this.closed || !this.log.dirty) return;
+    if (!this.log.dirty) return;
     this.log.dirty = false;
+    if (this.log.timer) {clearTimeout(this.log.timer); this.log.timer = undefined;}
     void this.enqueue(async () => {
-      if (!this.log.handle) {this.log.handle = await this.discord.streamSend(this.destination); this.created.push(this.log.handle);}
+      if (!this.log.handle) {this.log.handle = await this.discord.streamSend(this.destination);}
       await this.log.handle.edit(this.log.lines.map(line => `> ${line}`).join('\n'));
     }).catch(() => {this.log.dirty = true;});
   }

@@ -6,10 +6,10 @@ export interface RunOptions {attemptId: string; prompt: string; sessionId?: stri
 export type RunnerEvent = {type: string; [key: string]: unknown};
 export type RunnerOutcome =
   | {kind: 'success'; finalText: string; sessionId?: string; durationMs?: number; usage?: Record<string, unknown>}
-  | {kind: 'error'; error: string}
-  | {kind: 'stale_session'; error: string}
+  | {kind: 'error'; error: string; sessionId?: string}
+  | {kind: 'stale_session'; error: string; sessionId?: string}
   | {kind: 'cancelled'}
-  | {kind: 'timeout'};
+  | {kind: 'timeout'; sessionId?: string};
 type SpawnFn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 interface ActiveChild {done: Promise<RunnerOutcome>; terminate: (outcome: RunnerOutcome) => Promise<boolean>}
 
@@ -35,6 +35,7 @@ export class CmdRunner {
     let closed = false;
     let stderr = '';
     let malformed = 0;
+    let sessionId: string | undefined;
     let executionTimer: NodeJS.Timeout | undefined;
     let closeTimer: NodeJS.Timeout | undefined;
 
@@ -66,11 +67,15 @@ export class CmdRunner {
     };
 
     const parser = new NdjsonParser<Record<string, unknown>>(value => {
-      if (value.type === 'event' && value.event && typeof value.event === 'object') onEvent(value.event as RunnerEvent);
+      if (value.type === 'event' && value.event && typeof value.event === 'object') {
+        const ev = value.event as {type?: string; sessionId?: unknown};
+        if (ev.type === 'run_start' && typeof ev.sessionId === 'string') sessionId = ev.sessionId;
+        onEvent(value.event as RunnerEvent);
+      }
       if (value.type !== 'result') return;
       const subtype = String(value.subtype || 'success');
       const finalText = typeof value.finalText === 'string' ? value.finalText : typeof value.result === 'string' ? value.result : '';
-      if (subtype === 'error') choose({kind: 'error', error: String(value.error || 'Agent returned an error')});
+      if (subtype === 'error') choose({kind: 'error', error: String(value.error || 'Agent returned an error'), sessionId});
       else choose({kind: 'success', finalText, sessionId: typeof value.sessionId === 'string' ? value.sessionId : undefined, durationMs: typeof value.durationMs === 'number' ? value.durationMs : undefined, usage: value.usage && typeof value.usage === 'object' ? value.usage as Record<string, unknown> : undefined});
     }, () => {malformed++;});
 
@@ -81,9 +86,9 @@ export class CmdRunner {
       closed = true;
       parser.end();
       if (!candidate) {
-        if (isStaleSession(stderr)) candidate = {kind: 'stale_session', error: friendlyRunnerError(stderr)};
-        else if (malformed) candidate = {kind: 'error', error: `Agent emitted ${malformed} malformed output line(s) and no result.`};
-        else candidate = {kind: 'error', error: code === 0 ? 'The coding agent exited without a result.' : friendlyRunnerError(stderr)};
+        if (isStaleSession(stderr)) candidate = {kind: 'stale_session', error: friendlyRunnerError(stderr), sessionId};
+        else if (malformed) candidate = {kind: 'error', error: `Agent emitted ${malformed} malformed output line(s) and no result.`, sessionId};
+        else candidate = {kind: 'error', error: code === 0 ? 'The coding agent exited without a result.' : friendlyRunnerError(stderr), sessionId};
       }
       settle(candidate);
     });

@@ -104,11 +104,27 @@ export class RequestCoordinator {
     catch (error) {outcome = {kind: 'error' as const, error: error instanceof Error ? error.message : String(error)};}
     lease.stop(); this.leases.delete(request.id); this.stopStatusRefresh(request.id); await this.drainStatuses([request.id]); if (request.attemptId !== attemptId) {void stream.finalize('cancelled'); return true;}
     if (this.stopping) {request.state = 'interrupted_unknown'; request.error = 'Service stopped during execution; outcome unknown.'; conversation.paused = true; conversation.resetNoticePending = true;}
-    else if (outcome.kind === 'success') {request.state = 'completed'; request.finalText = outcome.finalText || 'Completed without a text response.'; if (outcome.sessionId?.trim()) {conversation.sessionId = outcome.sessionId.trim(); conversation.sessionState = 'usable';} this.state.runtime.totalCompleted++; await this.scheduleStatus(request); const finalIds: string[] = []; for (const [index, content] of chunkMarkdown(request.finalText).entries()) {const id = `final:${request.id}:${index}`; finalIds.push(id); await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', content, id, index));} await this.outbox.flush();}
-    else if (outcome.kind === 'stale_session') {request.state = 'errored'; request.error = 'The previous Command Code session is unavailable. Send a new message to start fresh.'; conversation.sessionState = 'reset_required'; conversation.resetNoticePending = true; this.state.runtime.totalErrors++; await this.scheduleStatus(request); await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', request.error, `final:${request.id}:0`, 0));}
     else if (outcome.kind === 'cancelled') {request.state = 'cancelled'; request.error = 'Request cancelled.'; await this.scheduleStatus(request);}
+    else if (outcome.kind === 'success' || stream.hasContent) {
+      // The answer is already streamed into Discord (live, chunked, not erased).
+      // Mark delivered without a duplicate final post or a false failure.
+      request.state = 'delivered';
+      if (outcome.kind === 'success') request.finalText = outcome.finalText || 'Completed without a text response.';
+      const sid = (outcome as {sessionId?: string}).sessionId?.trim();
+      if (sid) {conversation.sessionId = sid; conversation.sessionState = 'usable';}
+      this.state.runtime.totalCompleted++;
+      await this.scheduleStatus(request);
+      // Fallback: if a successful run emitted no streamed content, still deliver the
+      // authoritative final text (chunked) so a completed answer is never lost.
+      if (outcome.kind === 'success' && !stream.hasContent && request.finalText) {
+        for (const [index, content] of chunkMarkdown(request.finalText).entries()) {
+          await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', content, `final:${request.id}:${index}`, index));
+        }
+      }
+    }
+    else if (outcome.kind === 'stale_session') {request.state = 'errored'; request.error = 'The previous Command Code session is unavailable. Send a new message to start fresh.'; conversation.sessionState = 'reset_required'; conversation.resetNoticePending = true; this.state.runtime.totalErrors++; await this.scheduleStatus(request); await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', request.error, `final:${request.id}:0`, 0));}
     else {request.state = 'errored'; request.error = outcome.kind === 'timeout' ? 'The coding agent timed out.' : outcome.error; this.state.runtime.totalErrors++; await this.scheduleStatus(request); await this.outbox.enqueue(this.item(conversation.id, request.id, 'final', request.error, `final:${request.id}:0`, 0));}
-    await stream.finalize(request.state === 'completed' ? 'completed' : request.state === 'cancelled' ? 'cancelled' : 'errored', request.state === 'completed' ? undefined : (request.error ?? (outcome as {kind?: string}).kind));
+    await stream.finalize();
     request.finishedAt = Date.now(); delete conversation.activeRequestId; conversation.updatedAt = Date.now(); this.updateCounts(); await this.store.save(this.state); await this.drainStatuses([request.id]); await this.outbox.flush(); return true;
   }
 
