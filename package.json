@@ -1,26 +1,15 @@
 {
   "name": "commandcode-discord-mod",
-  "version": "1.0.0",
-  "description": "Discord integration for Command Code — full coding sessions in threads, resumable from terminal",
+  "version": "2.0.0",
+  "description": "Production Discord runtime and read-only Command Code status mod",
   "author": "Sebastian Alsina <alsinas@me.com>",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/chongoid/commandcode-discord-mod.git"
-  },
-  "keywords": ["commandcode", "discord", "mod", "coding-agent", "ai"],
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "commandcode": {
-    "mods": ["./index.ts"]
-  },
-  "dependencies": {
-    "discord.js": "^14.16.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "tsx": "^4.0.0"
-  }
+  "repository": {"type": "git", "url": "https://github.com/chongoid/commandcode-discord-mod.git"},
+  "type": "module",
+  "engines": {"node": ">=20.0.0"},
+  "files": ["dist/**", "src/**", "index.ts", "harness.d.ts", "commandcode-discord.service", "install-service.sh", "README.md", "INSTALL.md", ".env.example"],
+  "commandcode": {"mods": ["./index.ts"]},
+  "scripts": {"test": "vitest run", "typecheck": "tsc --noEmit", "build": "tsc -p tsconfig.build.json", "start": "node dist/standalone.js", "verify:pack": "npm pack --dry-run --json"},
+  "dependencies": {"discord.js": "^14.16.0"},
+  "devDependencies": {"@types/node": "^20.0.0", "typescript": "^5.0.0", "vitest": "^2.1.0"}
 }

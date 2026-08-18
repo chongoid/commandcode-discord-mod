@@ -1,0 +1,3 @@
+import type {Destination} from '../domain.js';
+import type {DiscordPort} from '../ports.js';
+export class TypingLease {private timer?: NodeJS.Timeout; private stopped = false; constructor(private readonly discord: DiscordPort, private readonly destination: Destination, private readonly intervalMs = 8000) {} start(): void {if (this.stopped || this.timer) return; void this.tick(); this.timer = setInterval(() => void this.tick(), this.intervalMs);} stop(): void {this.stopped = true; if (this.timer) clearInterval(this.timer); this.timer = undefined;} private async tick(): Promise<void> {if (!this.stopped) await this.discord.typing(this.destination).catch(() => undefined);}}

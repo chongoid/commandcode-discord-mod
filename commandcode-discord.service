@@ -1,18 +1,21 @@
 [Unit]
-Description=Command Code Discord Bot
-After=network.target
+Description=Command Code Discord Runtime
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=%i
 WorkingDirectory=%h
-ExecStart=/usr/bin/env npx tsx %h/.commandcode/mods/discord/standalone.ts
-Restart=always
-RestartSec=10
 Environment=NODE_ENV=production
-# Set your bot token here or in ~/.commandcode/mods/discord/.env
-# Environment=DISCORD_BOT_TOKEN=your-token-here
 EnvironmentFile=-%h/.commandcode/mods/discord/.env
+ExecStart=@NODE_BIN@ %h/.commandcode/mods/discord/dist/standalone.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=default.target

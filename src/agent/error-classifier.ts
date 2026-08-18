@@ -1,0 +1,2 @@
+export function isStaleSession(stderr: string): boolean {return /(?:no|unknown|invalid|missing|not found|expired|stale)\s+session|session\s+(?:not found|expired|does not exist)/i.test(stderr);}
+export function friendlyRunnerError(stderr: string): string {const text = stderr.trim().slice(-1000); if (/ENOENT|not found/i.test(text)) return 'Could not start the coding agent. Verify that Command Code is installed.'; if (/timeout/i.test(text)) return 'The coding agent timed out.'; return text.match(/error:?\s*(.+)/i)?.[1]?.trim() || 'The coding agent exited without a result.';}

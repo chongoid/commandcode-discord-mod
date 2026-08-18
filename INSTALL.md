@@ -1,51 +1,57 @@
-# Installation Guide
+# Installation
 
 ## Prerequisites
 
-1. **[Command Code](https://commandcode.ai)** installed
-2. **A Discord bot** — create one at the [Developer Portal](https://discord.com/developers/applications)
-3. **Privileged Intents** — in your app → **Bot** → scroll to **Privileged Gateway Intents** → enable:
-   - ✓ **Message Content Intent**
-   - ✓ **Server Members Intent**
-   - Click **Save Changes**
-4. **Invite the bot** with this URL (replace `YOUR_BOT_ID`):
-   ```
-   https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_ID&permissions=2147880016&scope=bot%20applications.commands
-   ```
+- Node.js 20 or newer
+- Command Code at `~/.local/bin/cmd`, configured with `CMD_PATH`, or available on `PATH`
+- A Discord application with Message Content intent enabled
+- Bot permissions to view/send messages, create/send in public threads, read history, and use application commands
 
-## Quick Install (one-liner)
-
-```bash
-git clone https://github.com/chongoid/commandcode-discord-mod.git ~/.commandcode/mods/discord \
-  && cd ~/.commandcode/mods/discord \
-  && npm install \
-  && echo "DISCORD_BOT_TOKEN=your-token-here" > .env \
-  && ./install-service.sh
-```
-
-Replace `your-token-here` with your actual bot token.
-
-## Managing the Service
-
-```bash
-systemctl --user status commandcode-discord       # Check status
-journalctl --user -f -u commandcode-discord       # View logs
-systemctl --user restart commandcode-discord       # Restart
-systemctl --user stop commandcode-discord          # Stop
-systemctl --user disable commandcode-discord       # Disable on boot
-```
-
-## Manual Run (for testing)
+## Configure
 
 ```bash
 cd ~/.commandcode/mods/discord
-source .env
-npx tsx standalone.ts
+cp .env.example .env
+chmod 600 .env
 ```
 
-## Uninstall
+Set these required values in `.env`:
+
+```dotenv
+DISCORD_BOT_TOKEN=...
+DISCORD_ALLOWED_USERS=123456789
+```
+
+`DISCORD_ALLOWED_USERS` is fail-closed. To intentionally allow everyone, set both `DISCORD_ALLOWED_USERS=*` and `DISCORD_ALLOW_ALL_USERS=true`. `CMD_YOLO` defaults to false; enable it only when every authorized user may read/write files and run commands as the service account.
+
+Optional controls include `DISCORD_GUILD_ID`, `DISCORD_CHANNEL_NAME`, `CMD_PATH`, `CMD_WORKING_DIR`, `CMD_MAX_TURNS`, `CMD_TIMEOUT_MS`, and custom state/lock paths.
+
+## Install and verify
 
 ```bash
-systemctl --user disable --now commandcode-discord
-rm -rf ~/.commandcode/mods/discord
+./install-service.sh
+systemctl --user start commandcode-discord.service
 ```
+
+The installer:
+
+1. validates the current Node binary and Command Code executable;
+2. enforces mode `0600` on `.env`;
+3. installs dependencies, runs tests/typecheck/build;
+4. installs the service with the exact validated Node path;
+5. enables but does not start or restart the service.
+
+```bash
+systemctl --user status commandcode-discord.service
+journalctl --user -u commandcode-discord.service -f
+systemctl --user restart commandcode-discord.service
+systemctl --user stop commandcode-discord.service
+```
+
+## Recovery behavior
+
+Production state defaults to `~/.commandcode/discord-runtime.json`. Legacy `~/.commandcode/discord-threads.json` is read non-destructively once. Active legacy or restart-interrupted work is marked unknown and never replayed. Completed final messages resume from the durable outbox with stable Discord nonces.
+
+## Smoke checks
+
+Exercise a guild mention/new thread, exact existing starter thread, tracked follow-up, rapid FIFO follow-ups, DM, attachments, parallel tools, subagent run, tool denial/error, `/stop`, `/reset`, stale session, restart during execution, and restart during final delivery. Confirm one informative status per request, a separate final answer, inert mentions, no duplicate prompt execution, and no stuck typing.

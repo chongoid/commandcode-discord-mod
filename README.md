@@ -1,86 +1,64 @@
-# 🤖 commandcode-discord
+# Command Code Discord Mod
 
-> **Code from Discord.** Full Command Code sessions in threads — resumable from your terminal.
+Production Discord integration with one standalone runtime and a read-only Command Code status mod.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Command%20Code-Mod-purple?style=for-the-badge" alt="Command Code Mod">
-  <img src="https://img.shields.io/badge/Discord.js-v14-blue?style=for-the-badge" alt="Discord.js">
-</p>
+## What it does
 
-## ✨ Features
+- Creates an exact tracked thread from a bot mention, or works in DMs using the real channel ID.
+- Queues follow-ups per conversation instead of dropping them.
+- Maintains one compact live status message with current/recent tools and subagents.
+- Posts the final answer separately and retries durable delivery after transient failures.
+- Never replays ambiguous work after a restart.
+- Exposes `/discord-status` and `/discord-sessions` in Command Code without starting a second bot.
 
-- **🧵 Auto-threading** — Each `@mention` spawns an isolated thread with its own session
-- **⚡ Full Agent** — Read/write files, run commands, search code — everything Command Code can do
-- **🔄 Session Parity** — Every Discord session is resumable in your terminal via `cmd --resume`
-- **💬 DM Support** — DM the bot for private sessions
+## Safety defaults
 
----
+This bot can run coding tools with the service account's filesystem access. `DISCORD_ALLOWED_USERS` is required. Wildcard access requires `DISCORD_ALLOW_ALL_USERS=true`, and unrestricted tool permission (`CMD_YOLO=true`) is opt-in. All Discord sends suppress user, role, `@here`, and `@everyone` notifications.
 
-## 🚀 Install
-
-Paste this into a Command Code session — it does everything:
-
-```
-Install the commandcode-discord mod from https://github.com/chongoid/commandcode-discord-mod — clone it to ~/.commandcode/mods/discord, run npm install, create a systemd service with install-service.sh, and prompt me for my Discord bot token.
-```
-
-For manual setup or prerequisites, see [INSTALL.md](./INSTALL.md).
-
----
-
-## 🎮 Usage
-
-**In Discord:**
-1. Mention `@YourBot` in `#command-code` to start a session
-2. Reply in the thread — no mention needed
-3. Or DM the bot directly for private sessions
-
-**In Terminal:**
+## Install
 
 ```bash
-cmd /discord-sessions          # List Discord sessions
-cmd --resume <session-id>      # Resume one in your terminal
+cd ~/.commandcode/mods/discord
+cp .env.example .env
+chmod 600 .env
+# Set DISCORD_BOT_TOKEN and DISCORD_ALLOWED_USERS.
+./install-service.sh
+systemctl --user start commandcode-discord.service
 ```
 
----
+The installer runs tests, typecheck, build, validates Node and Command Code, and installs a user service with the exact current Node binary. It never starts or restarts a live service automatically.
 
-## ⌨️ Slash Commands
+## Discord UX
 
-| Command | Description |
-|---------|-------------|
-| `/help` | Usage guide |
-| `/status` | Current session info + resume command |
-| `/sessions` | List all active sessions |
-| `/stop` | Stop the running process |
-| `/reset` | Reset this thread's session |
-| `/model <name>` | Set model for new sessions |
-| `/stats` | Usage statistics |
+Every accepted request gets one status message:
 
----
+```text
+🔵 Working · 24s
+Now: shell_command · Running tests
+Recent:
+• ✓ read_file · src/auth.ts
+• ✓ grep · refreshToken
+Tools: 1 active · 8 complete · 0 failed/blocked
+```
 
-## ⚙️ Configuration
+The status reaches Completed, Failed, Cancelled, or Interrupted exactly once. Final assistant text is posted below it and never overwrites the status.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DISCORD_BOT_TOKEN` | — | **(Required)** Bot token |
-| `DISCORD_ALLOWED_USERS` | `*` | Comma-separated user IDs or `*` for all |
-| `DISCORD_GUILD_ID` | all | Restrict to a specific guild |
-| `DISCORD_CHANNEL_NAME` | `command-code` | Name of the channel to create |
-| `DISCORD_BATCH_DELAY_MS` | `600` | Delay (ms) before processing batched messages |
-| `CMD_WORKING_DIR` | cwd | Working directory for sessions |
-| `CMD_YOLO` | `true` | Enable file writes + shell |
-| `CMD_MAX_TURNS` | `100` | Max turns per session |
+Commands: `/help`, `/status`, `/sessions`, `/stats`, `/stop`, `/reset`, `/model <name>`.
 
-Set these in `~/.commandcode/mods/discord/.env`.
+## Recovery
 
----
+Requests active during a service restart become interrupted with unknown outcome and are not rerun. Queued follow-ups behind them are cancelled. Already-generated final messages remain in the durable outbox and resume delivery. A stale Command Code session fails the current request; the next message starts fresh with one context-reset notice.
 
-## 📄 License
+## Development
 
-MIT
+```bash
+npm ci
+npm test
+npm run typecheck
+npm run build
+npm run verify:pack
+```
 
----
+Tests use fake Discord and child processes; they never connect to Discord or execute Command Code.
 
-<p align="center">
-  Built with <a href="https://commandcode.ai">Command Code</a>
-</p>
+See [INSTALL.md](./INSTALL.md) for prerequisites, configuration, and smoke checks.

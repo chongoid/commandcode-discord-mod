@@ -1,0 +1,7 @@
+import {readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import type {AppState} from '../domain.js';
+import {validateState} from '../persistence/state-schema.js';
+export async function readRuntimeState(file = process.env.DISCORD_STATE_FILE || join(process.env.HOME || process.cwd(), '.commandcode', 'discord-runtime.json')): Promise<AppState | undefined> {try {return validateState(JSON.parse(await readFile(file, 'utf8')));} catch {return undefined;}}
+export function runtimeStatus(state?: AppState): string {if (!state) return 'Discord runtime state is unavailable.'; const age = Math.max(0, Math.round((Date.now()-state.runtime.heartbeatAt)/1000)); return `${state.runtime.ready ? 'Ready' : 'Stopped'} · PID ${state.runtime.pid || 'unknown'} · heartbeat ${age}s ago · ${state.runtime.activeCount} active · ${state.runtime.queuedCount} queued · ${state.runtime.totalRequests} requests${state.runtime.lastError ? ` · last error: ${state.runtime.lastError}` : ''}`;}
+export function runtimeSessions(state?: AppState): string {if (!state) return 'Discord runtime state is unavailable.'; const rows = Object.values(state.conversations); if (!rows.length) return 'No Discord conversations found.'; return rows.map(c => {const resume = c.sessionId?.trim() && c.sessionState === 'usable' ? ` · \`cmd --resume ${c.sessionId}\`` : ''; return `• ${c.title || c.id} · ${c.activeRequestId ? 'active' : 'idle'} · ${c.queue.length} queued${resume}`;}).join('\n');}
