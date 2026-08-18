@@ -19,10 +19,21 @@ Set these required values in `.env`:
 
 ```dotenv
 DISCORD_BOT_TOKEN=...
-DISCORD_ALLOWED_USERS=123456789
 ```
 
-`DISCORD_ALLOWED_USERS` is fail-closed. To intentionally allow everyone, set both `DISCORD_ALLOWED_USERS=*` and `DISCORD_ALLOW_ALL_USERS=true`. `CMD_YOLO` defaults to false; enable it only when every authorized user may read/write files and run commands as the service account.
+Access is controlled by two **optional** allowlists. Setting neither lets the bot
+reply to anyone in the servers it's in:
+
+```dotenv
+DISCORD_ALLOWED_USERS=123456789
+DISCORD_ALLOWED_ROLES=admin,123456789012345678
+```
+
+`DISCORD_ALLOWED_USERS` is a comma-separated list of Discord user IDs.
+`DISCORD_ALLOWED_ROLES` is a comma-separated list of role names or role IDs.
+Allowed users and allowed roles are OR'd together. To intentionally allow everyone,
+set both `DISCORD_ALLOWED_USERS=*` and `DISCORD_ALLOW_ALL_USERS=true`.
+`CMD_YOLO` defaults to false; enable it only when every authorized user may read/write files and run commands as the service account.
 
 Optional controls include `DISCORD_GUILD_ID`, `DISCORD_CHANNEL_NAME`, `CMD_PATH`, `CMD_WORKING_DIR`, `CMD_MAX_TURNS`, `CMD_TIMEOUT_MS`, and custom state/lock paths.
 

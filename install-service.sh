@@ -6,13 +6,12 @@ SERVICE_NAME="commandcode-discord.service"
 NODE_BIN="$(command -v node)"
 NODE_MAJOR="$($NODE_BIN -p 'process.versions.node.split(".")[0]')"
 if (( NODE_MAJOR < 20 )); then echo "Node.js 20 or newer is required; found $($NODE_BIN --version)." >&2; exit 1; fi
-if [[ ! -f "$SCRIPT_DIR/.env" ]] && [[ -z "${DISCORD_BOT_TOKEN:-}" ]]; then echo "Create $SCRIPT_DIR/.env from .env.example and set the token and allowed users." >&2; exit 1; fi
-if [[ ! -f "$SCRIPT_DIR/.env" ]]; then umask 077; printf 'DISCORD_BOT_TOKEN=%s\nDISCORD_ALLOWED_USERS=%s\n' "$DISCORD_BOT_TOKEN" "${DISCORD_ALLOWED_USERS:?DISCORD_ALLOWED_USERS is required}" > "$SCRIPT_DIR/.env"; fi
+if [[ ! -f "$SCRIPT_DIR/.env" ]] && [[ -z "${DISCORD_BOT_TOKEN:-}" ]]; then echo "Create $SCRIPT_DIR/.env from .env.example and set the bot token." >&2; exit 1; fi
+if [[ ! -f "$SCRIPT_DIR/.env" ]]; then umask 077; printf 'DISCORD_BOT_TOKEN=%s\nDISCORD_ALLOWED_USERS=%s\nDISCORD_ALLOWED_ROLES=%s\n' "$DISCORD_BOT_TOKEN" "${DISCORD_ALLOWED_USERS:-}" "${DISCORD_ALLOWED_ROLES:-}" > "$SCRIPT_DIR/.env"; fi
 chmod 600 "$SCRIPT_DIR/.env"
 set -a
 source "$SCRIPT_DIR/.env"
 set +a
-if [[ -z "${DISCORD_ALLOWED_USERS:-}" ]]; then echo "DISCORD_ALLOWED_USERS must be configured in .env." >&2; exit 1; fi
 CMD_BIN="${CMD_PATH:-$HOME/.local/bin/cmd}"
 if [[ ! -x "$CMD_BIN" ]] && ! command -v cmd >/dev/null 2>&1; then echo "Command Code executable not found. Set CMD_PATH in .env." >&2; exit 1; fi
 cd "$SCRIPT_DIR"

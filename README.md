@@ -20,11 +20,15 @@ starts the bot, then ends by asking you for your Discord bot key and finishing t
 
 ```bash
 cd ~/.commandcode/mods/discord
-cp .env.example .env       # set DISCORD_BOT_TOKEN + DISCORD_ALLOWED_USERS
+cp .env.example .env       # set DISCORD_BOT_TOKEN (+ optional DISCORD_ALLOWED_USERS / DISCORD_ALLOWED_ROLES)
 chmod 600 .env
 ./install-service.sh       # tests, builds, installs systemd service
 systemctl --user start commandcode-discord.service
 ```
+
+By default the bot is **open** — it replies to anyone in the servers it's in. Set
+`DISCORD_ALLOWED_USERS` and/or `DISCORD_ALLOWED_ROLES` in `.env` to restrict access
+to specific users or roles (optional, OR'd together, and matched by role ID or name).
 
 Then in Discord: `@Command Code write a React counter component`.
 
