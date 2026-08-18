@@ -69,12 +69,10 @@ export class LiveStream {
     this.flushLog();
     await this.chain;
     this.closed = true;
-    // Remove the live streamed messages. The canonical final answer (or error) is
-    // posted via the outbox, so the user is left with one clean message, not duplicates.
+    // Remove the live streamed messages. The status message / outbox posts the single
+    // canonical terminal notice ("Completed" + final answer, error, or "Cancelled"),
+    // so we never emit a second, redundant terminal message.
     await this.cleanup();
-    if (status === 'cancelled') {
-      await this.enqueue(() => this.discord.send(this.destination, '🚫 Cancelled.', `cancel:${this.turnSeq}`).then(() => undefined)).catch(() => undefined);
-    }
   }
 
   private async cleanup(): Promise<void> {

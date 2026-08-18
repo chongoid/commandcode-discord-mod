@@ -27,10 +27,12 @@ export class RequestCoordinator {
       const conversation = this.state.conversations[request.conversationId];
       if (!conversation) continue;
       if (conversation.activeRequestId === request.id) delete conversation.activeRequestId;
-      conversation.paused = true; conversation.resetNoticePending = true;
+      // Preserve the conversation's session: do NOT pause or mark it reset-pending, so a
+      // message after restart resumes the same command-code session (prior context intact)
+      // instead of starting fresh.
       for (const queuedId of conversation.queue) {const queued = this.state.requests[queuedId]; if (queued) {queued.state = 'cancelled'; queued.finishedAt = now; queued.error = 'Cancelled because the prior request was interrupted.'; await this.queueStatus(queued);}}
       conversation.queue = [];
-      await this.outbox.enqueue(this.item(conversation.id, request.id, 'notice', '⚠️ A request was interrupted by restart. Its outcome is unknown, so no work was repeated. Queued follow-ups were cancelled. Send a new message to continue with fresh context.', `recovery:${request.id}`));
+      await this.outbox.enqueue(this.item(conversation.id, request.id, 'notice', '⚠️ A request was interrupted by a service restart; its outcome is unknown and was not repeated. Send a new message to continue — prior context is preserved.', `recovery:${request.id}`));
     }
     this.updateCounts(); await this.store.save(this.state);
   }
