@@ -21,9 +21,7 @@ export function renderStatus(request: RequestRecord, progress: ProgressSnapshot,
   const tools = Object.values(progress.tools); const subagents = Object.values(progress.subagents); const count = (items: typeof tools, states: string[]) => items.filter(item => states.includes(item.state)).length;
   if (tools.length) lines.push(`Tools: ${count(tools,['running','queued'])} active · ${count(tools,['completed'])} complete · ${count(tools,['errored','denied','hook_blocked'])} failed/blocked`);
   if (subagents.length) lines.push(`Subagents: ${count(subagents,['running','queued'])} active · ${count(subagents,['completed'])} complete`);
-  if (request.state === 'delivered') lines.push('Final response posted below.');
-  else if (request.state === 'completed') lines.push('Final response is pending delivery.');
-  else if (terminal && request.error) lines.push(request.error);
+  if (terminal && request.error) lines.push(request.error);
   return lines.join('\n').slice(0, 2000);
 }
 
