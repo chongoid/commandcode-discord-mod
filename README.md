@@ -30,18 +30,7 @@ Recent:
 Tools: 1 active · 2 complete
 ```
 
-When it finishes, you get the full text answer below the status. No duplicate messages, no silent hangs.
-
-For long model responses (30+ seconds), it says `🟢 Working · Still connected — model responses can take several minutes` so you know it's not stuck.
-
-## Recovery
-
-If the bot restarts while an agent is running:
-- The status shows `🟠 Interrupted · outcome unknown`
-- No work is repeated (your original message is safe)
-- Queue and metrics update correctly
-
-Next message starts fresh.
+When it finishes, you get the full text answer below the status. For long model calls it shows `🟢 Working · Still connected — model responses can take several minutes` so you know it's not stuck.
 
 ## Commands
 
