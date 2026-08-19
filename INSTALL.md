@@ -32,6 +32,7 @@ set these in `.env` before starting:
 # WHISPER_LANGUAGE=auto
 # WHISPER_TIMEOUT_MS=120000
 # WHISPER_FFMPEG=ffmpeg
+# WHISPER_MIN_TOKEN_PROB=0.4   # drop whisper segments whose mean per-token probability is below this (anti-hallucination)
 ```
 
 If whisper isn't set up (or ffmpeg is missing), voice attachments still work —

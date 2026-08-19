@@ -41,6 +41,24 @@ export interface WhisperConfig {
 
 const NATIVE_WAV_EXTS = new Set(['.wav', '.flac', '.mp3', '.m4a']);
 
+/**
+ * Cap on concurrent whisper-cli subprocesses. Each spawn loads the ~150 MB
+ * GGML model into memory, so a voice-message burst must not spawn an unbounded
+ * number of them. Jobs beyond the cap skip transcription (degrade to file)
+ * rather than queue, so a busy-burst never starves other messages.
+ */
+const MAX_CONCURRENT_STT = 2;
+let activeSttJobs = 0;
+
+function tryAcquireSttSlot(): boolean {
+  if (activeSttJobs >= MAX_CONCURRENT_STT) return false;
+  activeSttJobs++;
+  return true;
+}
+function releaseSttSlot(): void {
+  activeSttJobs = Math.max(0, activeSttJobs - 1);
+}
+
 export function hasWhisperPrereqs(cfg: WhisperConfig): boolean {
   return cfg.enabled && executableExists(cfg.binary) && fileExists(cfg.model);
 }
@@ -72,28 +90,44 @@ export interface TranscriptionResult {
 function runToJson(bin: string, args: string[], timeoutMs: number): Promise<{code: number | null; stderr: string}> {
   return new Promise((resolve) => {
     let proc: ChildProcess;
-    let stdout = '';
     let stderr = '';
+    let settled = false;
+    const settle = (code: number | null, msg: string) => {
+      if (settled) return;
+      settled = true;
+      resolve({code, stderr: msg});
+    };
+    // Deterministic timeout: SIGKILL the child and resolve immediately. The
+    // pending 'close' event still fires later and calls settle() again, which
+    // is idempotent. Never allow the promise to depend on 'close' firing.
     const timer = setTimeout(() => {
-      proc.kill('SIGKILL');
+      try {
+        proc.kill('SIGKILL');
+      } catch {
+        // already reaped
+      }
+      settle(null, `timed out after ${timeoutMs}ms`);
     }, timeoutMs);
     try {
       proc = spawn(bin, args, {stdio: ['ignore', 'pipe', 'pipe']});
     } catch (error) {
       clearTimeout(timer);
-      resolve({code: -1, stderr: error instanceof Error ? error.message : String(error)});
+      settle(-1, error instanceof Error ? error.message : String(error));
       return;
     }
-    proc.stdout?.on('data', (chunk: Buffer) => {stdout += chunk.toString();});
     proc.stderr?.on('data', (chunk: Buffer) => {stderr += chunk.toString();});
     proc.on('error', (error) => {
       clearTimeout(timer);
-      resolve({code: -1, stderr: error.message});
+      settle(-1, error.message);
     });
     proc.on('close', (code) => {
       clearTimeout(timer);
-      resolve({code, stderr: stderr.trim()});
+      settle(code != null ? code : null, stderr.trim());
     });
+    // Ensure a timeout actually terminates the child.
+    if (timeoutMs > 0) {
+      timer.unref?.();
+    }
   });
 }
 
@@ -141,9 +175,15 @@ export async function transcribeVoiceFile(inputPath: string, cfg: WhisperConfig)
     return {success: false, transcript: '', error: 'whisper binary/model not configured'};
   }
   if (!fileExists(inputPath)) return {success: false, transcript: '', error: `audio file not found: ${inputPath}`};
+  // Bounded concurrency: skip (degrade to file) when at the STT subprocess cap
+  // rather than queue, so a voice burst can't spawn unbounded model loads.
+  if (!tryAcquireSttSlot()) {
+    return {success: false, transcript: '', error: `transcription skipped: at concurrency cap (${MAX_CONCURRENT_STT})`};
+  }
 
-  const workDir = await mkdtemp(join(tmpdir(), 'cc-whisper-'));
+  let workDir: string | undefined;
   try {
+    workDir = await mkdtemp(join(tmpdir(), 'cc-whisper-'));
     let wavInput = inputPath;
     const ext = extname(inputPath).toLowerCase();
     // Prefer a direct WAV/FLAC/MP3/M4A pass; otherwise transcode with ffmpeg.
@@ -191,6 +231,9 @@ export async function transcribeVoiceFile(inputPath: string, cfg: WhisperConfig)
   } catch (error) {
     return {success: false, transcript: '', error: `transcription failed: ${error instanceof Error ? error.message : String(error)}`};
   } finally {
-    await rm(workDir, {recursive: true, force: true}).catch(() => undefined);
+    releaseSttSlot();
+    if (workDir) {
+      await rm(workDir, {recursive: true, force: true}).catch(() => undefined);
+    }
   }
 }
