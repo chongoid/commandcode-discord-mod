@@ -1,3 +1,6 @@
+import {access, mkdir, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {describe, expect, it} from 'vitest';
 import {emptyState, newProgress} from '../src/domain.js';
 import {MemoryStore} from '../src/persistence/json-store.js';
@@ -5,7 +8,7 @@ import {OutboxWorker} from '../src/delivery/outbox-worker.js';
 import {RequestCoordinator} from '../src/orchestration/request-coordinator.js';
 import {FakeDiscord, FakeRunner, dm, eventually} from './helpers/fakes.js';
 
-function setup() {const state = emptyState(); const store = new MemoryStore(state); const discord = new FakeDiscord(); const runner = new FakeRunner(); const outbox = new OutboxWorker(state, store, discord, 1); const coordinator = new RequestCoordinator(state, store, runner, outbox, {workingDir: '.', yolo: false, maxTurns: 10, timeoutMs: 1000}); return {state, store, discord, runner, outbox, coordinator};}
+function setup(workingDir = '.') {const state = emptyState(); const store = new MemoryStore(state); const discord = new FakeDiscord(); const runner = new FakeRunner(); const outbox = new OutboxWorker(state, store, discord, 1); const coordinator = new RequestCoordinator(state, store, runner, outbox, {workingDir, yolo: false, maxTurns: 10, timeoutMs: 1000}); return {state, store, discord, runner, outbox, coordinator};}
 
 describe('coordinator', () => {
   it('runs rapid followups FIFO with separate final messages and correct counts', async () => {
@@ -56,5 +59,41 @@ describe('coordinator', () => {
     await x.coordinator.accept({conversationId: 'c', destination: dm(), sourceMessageId: '1', prompt: 'one'});
     await eventually(() => x.discord.sent.some(message => message.content === 'FINAL'));
     expect(x.discord.sent.some(message => message.content === 'FINAL')).toBe(true);
+  });
+
+  it('cleans up downloaded attachments after successful execution', async () => {
+    const workingDir = join(tmpdir(), `ccoord-exec-${Date.now()}`);
+    const x = setup(workingDir); x.runner.outcomes.push({kind: 'success', finalText: 'done'});
+    const destDir = join(workingDir, '.discord-attachments', 'msg1');
+    await mkdir(destDir, {recursive: true});
+    await writeFile(join(destDir, 'photo.jpeg'), 'image-data');
+
+    const att = {name: 'photo.jpeg', localPath: join(destDir, 'photo.jpeg'), contentType: 'image/jpeg', size: 10, kind: 'image' as const};
+    await x.coordinator.accept({conversationId: 'c', destination: dm(), sourceMessageId: '1', prompt: 'edit this', attachments: [att]});
+    await eventually(() => x.runner.runs.length === 1 && x.state.runtime.activeCount === 0);
+
+    const request = Object.values(x.state.requests).find(r => r.attachments?.length);
+    expect(request?.attachments).toHaveLength(1);
+    expect(request?.attachments?.[0].name).toBe('photo.jpeg');
+
+    // File should be cleaned up after execution
+    await expect(access(att.localPath)).rejects.toThrow();
+    await rm(workingDir, {recursive: true, force: true});
+  });
+
+  it('cleans up attachments from interrupted requests during shutdown', async () => {
+    const workingDir = join(tmpdir(), `ccoord-shutdown-${Date.now()}`);
+    const x = setup(workingDir);
+    const destDir = join(workingDir, '.discord-attachments', 'msg2');
+    await mkdir(destDir, {recursive: true});
+    await writeFile(join(destDir, 'voice.ogg'), 'audio-data');
+
+    const att = {name: 'voice.ogg', localPath: join(destDir, 'voice.ogg'), contentType: 'audio/ogg', size: 10, kind: 'voice' as const};
+    await x.coordinator.accept({conversationId: 'c', destination: dm(), sourceMessageId: '1', prompt: 'transcribe', attachments: [att]});
+    await eventually(() => x.runner.runs.length === 1);
+
+    await x.coordinator.shutdown();
+    await expect(access(att.localPath)).rejects.toThrow();
+    await rm(workingDir, {recursive: true, force: true});
   });
 });
