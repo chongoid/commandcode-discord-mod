@@ -3,17 +3,17 @@ import type {DiscordPort, RunnerPort} from '../../src/ports.js';
 import type {RunOptions, RunnerEvent, RunnerOutcome} from '../../src/agent/cmd-runner.js';
 
 export class FakeDiscord implements DiscordPort {
-  sent: Array<{destination: Destination; content: string; id: string; nonce: string}> = [];
+  sent: Array<{destination: Destination; content: string; id: string; nonce: string; files?: string[]}> = [];
   edits: Array<{messageId: string; content: string}> = [];
   typingCount = 0;
   failEdits = false;
   failSends = false;
   failSendNonces = new Set<string>();
   private nonces = new Map<string, string>();
-  async send(destination: Destination, content: string, nonce: string) {
+  async send(destination: Destination, content: string, nonce: string, files?: string[]) {
     if (this.failSends || this.failSendNonces.has(nonce)) throw new Error('send failed');
     const prior = this.nonces.get(nonce); if (prior) return {messageId: prior};
-    const id = `m${this.sent.length + 1}`; this.nonces.set(nonce, id); this.sent.push({destination, content, id, nonce}); return {messageId: id};
+    const id = `m${this.sent.length + 1}`; this.nonces.set(nonce, id); this.sent.push({destination, content, id, nonce, files}); return {messageId: id};
   }
   async edit(_destination: Destination, messageId: string, content: string) {if (this.failEdits) {const error = new Error('Unknown Message') as Error & {code: number}; error.code = 10008; throw error;} this.edits.push({messageId, content});}
   async streamSend(_destination: Destination) {const id = `s${this.edits.length + 1}`; const deleted: string[] = []; return {messageId: id, deleted, edit: async (content: string) => {this.edits.push({messageId: id, content});}, delete: async () => {deleted.push(id);}};}

@@ -69,6 +69,10 @@ export class OutboxWorker {
     await this.store.save(this.state);
     try {
       if (item.operation === 'edit') await this.discord.edit(conversation.destination, item.messageId!, item.content);
+      else if (item.kind === 'file') {
+        const receipt = await this.discord.send(conversation.destination, item.content, item.id, item.files);
+        item.messageId = receipt.messageId;
+      }
       else {
         const receipt = await this.discord.send(conversation.destination, item.content, item.id);
         item.messageId = receipt.messageId;

@@ -41,6 +41,7 @@ function validateRequest(id: string, request: RequestRecord, state: AppState): v
 function validateProgress(item: ProgressItem): void {if (!text(item.id) || !['tool','subagent','notice'].includes(item.kind) || !text(item.name) || !progressStates.has(item.state) || !number(item.updatedAt)) throw new Error('Invalid progress item');}
 
 function validateOutbox(item: OutboxItem, state: AppState): void {
-  if (!text(item.id) || !state.conversations[item.conversationId] || (item.requestId && !state.requests[item.requestId]) || !['status','final','notice'].includes(item.kind) || !['send','edit'].includes(item.operation) || typeof item.content !== 'string' || !outboxStates.has(item.state) || !number(item.attempts) || !number(item.nextAttemptAt) || !number(item.createdAt)) throw new Error('Invalid outbox item');
+  if (!text(item.id) || !state.conversations[item.conversationId] || (item.requestId && !state.requests[item.requestId]) || !['status','final','notice','file'].includes(item.kind) || !['send','edit'].includes(item.operation) || typeof item.content !== 'string' || !outboxStates.has(item.state) || !number(item.attempts) || !number(item.nextAttemptAt) || !number(item.createdAt)) throw new Error('Invalid outbox item');
   if (item.operation === 'edit' && !text(item.messageId)) throw new Error('Edit missing message id');
+  if (item.kind === 'file' && (!Array.isArray(item.files) || item.files.length === 0 || !item.files.every(text))) throw new Error('File item missing files');
 }
