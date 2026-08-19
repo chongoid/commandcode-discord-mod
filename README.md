@@ -55,6 +55,47 @@ For long model calls it keeps streaming and shows a `Still connected` note so yo
 
 `/help` `/status` `/sessions` `/stats` `/stop` `/reset` `/model <name>`
 
+## Attachments: images & voice
+
+You can attach images, audio (including Discord voice messages) and other files
+to your message and the bot hands them to Command Code as local files:
+
+- Attachments are downloaded to a per-message folder under
+  `workingDir/.discord-attachments/<messageId>/` and referenced (by absolute
+  path, type, size and kind) in the prompt so the model can read them.
+- Images (`image/*`) and audio (`audio/*`, plus voice messages named with
+  "voice") are labeled as such; everything else is treated as a generic file.
+- Files are removed automatically when the run finishes, is cancelled, or the
+  bot shuts down, so no junk accumulates on disk. `.discord-attachments/` is
+  gitignored.
+- Hard caps keep things safe: max 25 MB per file, downloads follow CDN redirects
+  but refuse to leave `cdn.discordapp.com` / `media.discordapp.net` (SSRF
+  guard), and filenames are sanitized against path traversal and prompt injection.
+- If a download fails for any reason, the original CDN URL is substituted into
+  the prompt so the request still proceeds instead of erroring out.
+
+Whether the model can actually *see* an image or *hear* audio depends on the
+backend model having vision/audio support — the bot's job is to fetch the file
+and point the agent at it.
+
+### Voice-message transcription (built-in, self-contained)
+
+Voice messages (and any `audio/*` attachment) are **auto-transcribed** to text
+so a text-only `cmd` model can read what was said. Transcription is local and
+self-contained — a static `whisper.cpp` binary + GGML model run on your own
+machine, with **no Hermes, Python, or shared-agent dependency**:
+
+```bash
+./scripts/install-whisper.sh        # one-time: downloads whisper-cli + ggml-base.bin (~150 MB)
+systemctl --user restart commandcode-discord.service
+```
+
+The transcript is inserted into the prompt under a `🗣 Voice messages
+(auto-transcribed)` block. Inaudible/silent notes get a clear "returned nothing
+— likely silent" marker instead of fake quotes, and if the STT stack isn't set
+up the audio still passes through as a file (transcription never breaks
+attachments). See `INSTALL.md` for configuration options (`WHISPER_*`).
+
 ## Development
 
 ```bash

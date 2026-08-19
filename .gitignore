@@ -7,4 +7,5 @@ coverage/
 *.lock
 discord-runtime.json*
 discord-threads.json*
+.discord-attachments/
 .DS_Store

@@ -9,7 +9,7 @@ export interface StreamHandle {
   delete(): Promise<void>;
 }
 export interface DiscordPort {
-  send(destination: Destination, content: string, nonce: string): Promise<DeliveryReceipt>;
+  send(destination: Destination, content: string, nonce: string, files?: string[]): Promise<DeliveryReceipt>;
   edit(destination: Destination, messageId: string, content: string): Promise<void>;
   typing(destination: Destination): Promise<void>;
   isPermanentError?(error: unknown): boolean;
