@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {isAuthorized, isUserAllowed, hasAllowedRole} from '../src/config.js';
+import {isAuthorized, isUserAllowed, hasAllowedRole, resolveWhisperConfig} from '../src/config.js';
 
 const cfg = (users: string[] = [], roles: string[] = []) => ({allowedUsers: users, allowedRoles: roles});
 
@@ -39,5 +39,26 @@ describe('helpers', () => {
   });
   it('hasAllowedRole is false for an empty allowlist', () => {
     expect(hasAllowedRole([{id: 'a', name: 'b'}], [])).toBe(false);
+  });
+});
+
+describe('resolveWhisperConfig', () => {
+  const HOME = '/home/user';
+  it('defaults to ~/.commandcode/whisper with auto language and enabled', () => {
+    const w = resolveWhisperConfig({HOME});
+    expect(w.enabled).toBe(true);
+    expect(w.binary).toBe('/home/user/.commandcode/whisper/bin/whisper-cli');
+    expect(w.model).toBe('/home/user/.commandcode/whisper/models/ggml-base.bin');
+    expect(w.language).toBe('auto');
+    expect(w.timeoutMs).toBe(120000);
+    expect(w.minTokenProb).toBeGreaterThan(0);
+  });
+  it('honours explicit overrides', () => {
+    const w = resolveWhisperConfig({HOME, WHISPER_BINARY: '/x/cli', WHISPER_MODEL: '/x/m.bin', WHISPER_LANGUAGE: 'en', WHISPER_ENABLED: 'false', WHISPER_TIMEOUT_MS: '5000'});
+    expect(w.binary).toBe('/x/cli');
+    expect(w.model).toBe('/x/m.bin');
+    expect(w.language).toBe('en');
+    expect(w.enabled).toBe(false);
+    expect(w.timeoutMs).toBe(5000);
   });
 });

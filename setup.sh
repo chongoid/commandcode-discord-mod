@@ -115,7 +115,14 @@ else
   CMD_YOLO="false"
 fi
 
-# --- 8. Write .env ---
+# --- 8. Optional: voice transcription ---
+echo ""
+echo "8. Voice-message transcription (self-contained whisper.cpp):"
+echo "   Installs a local whisper-cli binary + model so the bot can transcribe"
+echo "   voice messages (no Hermes/Python dependency). Requires ffmpeg on PATH."
+read -rp "   Install now? [y/N]: " INSTALL_WHISPER
+
+# --- 9. Write .env ---
 echo ""
 echo "Writing configuration to $ENV_FILE ..."
 
@@ -137,6 +144,17 @@ chmod 600 "$ENV_FILE"
 echo ""
 echo "✓ Configuration written to $ENV_FILE (mode 0600)"
 echo ""
+
+if [[ "$INSTALL_WHISPER" =~ ^[Yy]$ ]]; then
+  echo "Installing whisper.cpp for voice transcription ..."
+  if [[ -x "$SCRIPT_DIR/scripts/install-whisper.sh" ]]; then
+    "$SCRIPT_DIR/scripts/install-whisper.sh" || echo "⚠ whisper install failed — voice transcription disabled; re-run ./scripts/install-whisper.sh later."
+  else
+    echo "⚠ scripts/install-whisper.sh not found — skipping. Run it after installing to enable voice transcription."
+  fi
+  echo ""
+fi
+
 echo "Next steps:"
 echo "  1. Review INSTALL.md for prerequisites"
 echo "  2. Run ./install-service.sh to install the systemd service"

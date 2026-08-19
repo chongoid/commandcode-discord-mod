@@ -6,6 +6,37 @@
 - Command Code at `~/.local/bin/cmd`, configured with `CMD_PATH`, or available on `PATH`
 - A Discord application with Message Content intent enabled
 - Bot permissions to view/send messages, create/send in public threads, read history, and use application commands
+- `ffmpeg` on `PATH` (used to transcode voice-message audio — required for voice transcription only, not for the bot to run)
+
+### Voice transcription (optional but built-in)
+
+Voice-message transcription is bundled and **self-contained** — it uses a local
+`whisper.cpp` binary and a GGML model downloaded into `~/.commandcode/whisper/`,
+with **no dependency on Hermes, Python, or any shared agent install**. Enable it
+once:
+
+```bash
+./scripts/install-whisper.sh        # downloads whisper-cli + ggml-base.bin (~150 MB)
+systemctl --user restart commandcode-discord.service
+```
+
+That's it. The runtime auto-detects the defaults (`~/.commandcode/whisper/bin/whisper-cli`
+and `~/.commandcode/whisper/models/ggml-base.bin`). To point elsewhere or tune it,
+set these in `.env` before starting:
+
+```dotenv
+# WHISPER_ENABLED=true
+# WHISPER_BINARY=/path/to/whisper-cli
+# WHISPER_MODEL=/path/to/ggml-base.bin
+# WHISPER_DIR=/home/user/.commandcode/whisper
+# WHISPER_LANGUAGE=auto
+# WHISPER_TIMEOUT_MS=120000
+# WHISPER_FFMPEG=ffmpeg
+```
+
+If whisper isn't set up (or ffmpeg is missing), voice attachments still work —
+they're passed to the agent as files exactly as before; transcription is strictly
+additive and never breaks attachment handling.
 
 ## Configure
 

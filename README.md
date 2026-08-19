@@ -78,6 +78,24 @@ Whether the model can actually *see* an image or *hear* audio depends on the
 backend model having vision/audio support — the bot's job is to fetch the file
 and point the agent at it.
 
+### Voice-message transcription (built-in, self-contained)
+
+Voice messages (and any `audio/*` attachment) are **auto-transcribed** to text
+so a text-only `cmd` model can read what was said. Transcription is local and
+self-contained — a static `whisper.cpp` binary + GGML model run on your own
+machine, with **no Hermes, Python, or shared-agent dependency**:
+
+```bash
+./scripts/install-whisper.sh        # one-time: downloads whisper-cli + ggml-base.bin (~150 MB)
+systemctl --user restart commandcode-discord.service
+```
+
+The transcript is inserted into the prompt under a `🗣 Voice messages
+(auto-transcribed)` block. Inaudible/silent notes get a clear "returned nothing
+— likely silent" marker instead of fake quotes, and if the STT stack isn't set
+up the audio still passes through as a file (transcription never breaks
+attachments). See `INSTALL.md` for configuration options (`WHISPER_*`).
+
 ## Development
 
 ```bash
