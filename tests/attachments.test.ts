@@ -117,6 +117,7 @@ describe('downloadAttachment', () => {
   it('downloads an attachment to a local file', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
       arrayBuffer: () => Promise.resolve(toBuf('fake-image-data')),
       headers: {get: () => null},
     });
@@ -132,7 +133,7 @@ describe('downloadAttachment', () => {
     expect(info.contentType).toBe('image/jpeg');
     expect(info.size).toBe(15);
     expect(info.kind).toBe('image');
-    expect(mockFetch).toHaveBeenCalledWith(CDN_URL, {signal: undefined, redirect: 'manual'});
+    expect(mockFetch).toHaveBeenCalledWith(CDN_URL, {signal: undefined, redirect: 'follow'});
 
     const files = await readdir('/tmp/does-not-exist-yet');
     expect(files).toContain('test.jpg');
@@ -142,6 +143,7 @@ describe('downloadAttachment', () => {
   it('creates the destination directory if it does not exist', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
       arrayBuffer: () => Promise.resolve(toBuf('data')),
       headers: {get: () => null},
     }));
@@ -183,6 +185,7 @@ describe('downloadAttachment', () => {
   it('rejects path traversal in filenames', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
       arrayBuffer: () => Promise.resolve(toBuf('data')),
       headers: {get: () => null},
     }));
@@ -199,6 +202,7 @@ describe('downloadAttachment', () => {
   it('handles null name with unique suffix', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
       arrayBuffer: () => Promise.resolve(toBuf('data')),
       headers: {get: () => null},
     }));
@@ -212,6 +216,39 @@ describe('downloadAttachment', () => {
     expect(info.name).toBe('attachment-12345-0');
     await rm('/tmp/cc-nullname', {recursive: true, force: true});
   });
+
+  it('follows redirects and accepts the final Discord CDN URL', async () => {
+    // media.discordapp.net commonly 302s to cdn.discordapp.com — fetch follows it
+    // and reports the redirected URL via response.url.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
+      arrayBuffer: () => Promise.resolve(toBuf('data')),
+      headers: {get: () => null},
+    }));
+
+    const info = await downloadAttachment(
+      makeAttachment({name: 'voice.ogg', url: MEDIA_URL, contentType: 'audio/ogg', size: 4}),
+      '/tmp/cc-redirect',
+    );
+    expect(info.kind).toBe('voice');
+    expect(info.size).toBe(4);
+    await rm('/tmp/cc-redirect', {recursive: true, force: true});
+  });
+
+  it('rejects a redirect to a non-Discord host (open-redirect SSRF)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      url: 'https://evil.com/stolen',
+      arrayBuffer: () => Promise.resolve(toBuf('data')),
+      headers: {get: () => null},
+    }));
+
+    await expect(
+      downloadAttachment(makeAttachment({name: 'doc.pdf', url: CDN_URL, contentType: 'application/pdf', size: 4}), '/tmp/cc-redirect-bad'),
+    ).rejects.toThrow('Download redirected to non-Discord host');
+    await rm('/tmp/cc-redirect-bad', {recursive: true, force: true});
+  });
 });
 
 describe('downloadAttachments', () => {
@@ -219,11 +256,13 @@ describe('downloadAttachments', () => {
     const mockFetch = vi.fn()
       .mockResolvedValueOnce({
         ok: true, status: 200, statusText: 'OK',
+        url: CDN_URL,
         arrayBuffer: () => Promise.resolve(toBuf('data1')),
         headers: {get: () => null},
       })
       .mockResolvedValueOnce({
         ok: true, status: 200, statusText: 'OK',
+        url: CDN_URL,
         arrayBuffer: () => Promise.resolve(toBuf('data2')),
         headers: {get: () => null},
       });
@@ -266,6 +305,7 @@ describe('downloadAttachments', () => {
     const mockFetch = vi.fn()
       .mockResolvedValueOnce({
         ok: true, status: 200, statusText: 'OK',
+        url: CDN_URL,
         arrayBuffer: () => Promise.resolve(toBuf('good')),
         headers: {get: () => null},
       })
@@ -294,6 +334,7 @@ describe('downloadAttachments', () => {
   it('prevents filename collisions for same-named attachments', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
       arrayBuffer: () => Promise.resolve(toBuf('image-data')),
       headers: {get: () => null},
     });
@@ -324,6 +365,7 @@ describe('downloadAttachments', () => {
     const controller = new AbortController();
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
+      url: CDN_URL,
       arrayBuffer: () => Promise.resolve(toBuf('data')),
       headers: {get: () => null},
     });
@@ -335,7 +377,7 @@ describe('downloadAttachments', () => {
       controller.signal,
     );
 
-    expect(mockFetch).toHaveBeenCalledWith(CDN_URL, {signal: controller.signal, redirect: 'manual'});
+    expect(mockFetch).toHaveBeenCalledWith(CDN_URL, {signal: controller.signal, redirect: 'follow'});
     await rm('/tmp/cc-signal', {recursive: true, force: true});
   });
 });
@@ -394,6 +436,3 @@ describe('isWithinBase', () => {
     expect(_isWithinBase('/tmp/evil/file.txt', '/tmp/base')).toBe(false);
   });
 });
-
-// unused import removed
-

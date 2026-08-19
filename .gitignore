@@ -8,5 +8,4 @@ coverage/
 discord-runtime.json*
 discord-threads.json*
 .discord-attachments/
-postcss.config.cjs
 .DS_Store

@@ -99,9 +99,15 @@ export async function downloadAttachment(
     throw new Error(`Attachment too large: ${formatFileSize(attachment.size)}`);
   }
 
-  const response = await fetch(attachment.url, {signal, redirect: 'manual'});
+  // Follow redirects so CDN URLs that 302 (resize variants, regional hosts) still
+  // download, but re-validate the FINAL URL stayed on a Discord CDN host so an
+  // open redirect can't smuggle the fetch to an arbitrary host (SSRF).
+  const response = await fetch(attachment.url, {signal, redirect: 'follow'});
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+  }
+  if (!isDiscordCdnUrl(response.url)) {
+    throw new Error(`Download redirected to non-Discord host`);
   }
 
   const contentLength = response.headers.get('content-length');
